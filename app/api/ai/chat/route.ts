@@ -2,35 +2,35 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyJwt } from "@/lib/auth";
 
-const SYSTEM_PROMPT = `You are AppointLab AI, a helpful general-purpose assistant for AppointLab, a healthcare appointment booking platform.
+const REFUSAL_MESSAGE = "I am here only to help you use the hospital appointment app.";
 
-YOUR IDENTITY:
-- Your name is "AppointLab AI"
-- When users greet you (hello, hi, bonjour, salut, مرحبا, etc.), always introduce yourself as "AppointLab AI"
-- Example greeting response: "Hello! I'm AppointLab AI, your helpful assistant. How can I assist you today?"
+const APP_NAVIGATION_GUIDE = `
+APP STRUCTURE (use this to guide users):
+- Home/dashboard: left sidebar has tabs — History, Insurance, Appointments, Settings (and Messages for admins).
+- To BOOK an appointment: Tell the user to go to the "Appointments" tab in the left menu. There they see "Book an Appointment" and a list of services. They should click "Book Now" on the service they want, then follow the steps (choose date, time, confirm).
+- To VIEW appointments: The "History" tab shows "Appointment History" with all their booked appointments.
+- To CANCEL or manage an appointment: They can do this from the History tab where their appointments are listed.
+- Profile/settings: The "Settings" tab lets them update their name, email, phone, and password.
+- Sign up / log in: From the main landing page; they need an account to book and see appointments.
+When the user asks "where can I book" or "how do I book", give them these exact steps in the app.`;
 
-You can help with:
-- Medical and health questions (your specialty!)
-- Symptoms, diseases, and conditions
-- Medical tests and lab procedures (blood tests, imaging, X-rays, etc.)
-- Medications and their side effects
-- Wellness, nutrition, fitness, and prevention
-- Mental health and well-being
-- Understanding lab results
-- Booking medical appointments on AppointLab
-- User's upcoming appointments
-- General questions about any topic
-- Information, advice, and assistance with various subjects
+const SYSTEM_PROMPT = `You are an AI assistant for a hospital appointment web application (AppointLab).
 
-RULES:
-- ALWAYS respond in ENGLISH, regardless of what language the user writes in
-- Be helpful, friendly, and informative
-- When discussing medical topics, always remind users that you are an AI and NOT a replacement for professional medical advice
-- Never diagnose medical conditions - suggest they book an appointment with a professional
-- For medical emergencies, always tell users to call emergency services immediately
-- Be compassionate, clear, and concise
-- Keep responses concise (under 200 words when possible)
-- When sharing appointment info, be friendly and helpful`;
+STRICT RULE: You ONLY answer questions about USING this app. You do NOT answer: medical advice, health diagnosis, general knowledge, geography, history, science, trivia, or any topic unrelated to the app.
+
+Allowed topics ONLY:
+- Creating an account / sign up / register
+- Booking an appointment
+- Viewing or listing appointments
+- Cancelling or rescheduling appointments
+- Updating profile information
+- How to use the app (navigation, menu, features)
+
+For ANY question outside the above, you MUST reply with exactly: "${REFUSAL_MESSAGE}"
+Do not add anything else. Do not explain. Do not answer the question.
+
+When the question IS about the app: be helpful, friendly, and concise. Keep responses under 200 words.
+${APP_NAVIGATION_GUIDE}`;
 
 // Helper to get user from request
 async function getUserFromRequest(req: NextRequest) {
@@ -106,6 +106,32 @@ function formatAppointmentsForAI(appointments: any[]) {
   return info;
 }
 
+// Detect off-topic questions (general knowledge, geography, etc.) — refuse before calling any LLM
+function isOffTopic(message: string): boolean {
+  const lower = message.toLowerCase().trim();
+  const offTopicPatterns = [
+    /\bcapital\b/, /\bcountry\b/, /\bcountries\b/, /\bcity\b/, /\bcities\b/,
+    /\bpopulation\b/, /\bweather\b/, /\bclimate\b/, /\bhistory\b/, /\bwho is\b/,
+    /\bwhat is\b.*\b(morocco|france|usa|world|earth)\b/, /\bwhere is\b/, /\bwhen did\b/,
+    /\bhow many\b/, /\bwhy does\b.*\b(sun|rain|sky)\b/, /\brecipe\b/, /\bcooking\b/,
+    /\bsport\b/, /\bfootball\b/, /\bgame\b/, /\bmovie\b/, /\bmusic\b(?!\s*(book|appointment))/,
+    /\btrivia\b/, /\bgeneral knowledge\b/, /\bquiz\b/, /\bdefine\b/, /\bmeaning of\b/,
+    /\btranslate\b(?!\s*(app|page|menu))/, /\bwrite (a |me )?(poem|story|essay)\b/,
+    /\bmedical\b/, /\bsymptom\b/, /\bdiagnos/, /\bdisease\b/, /\bmedication\b/,
+    /\bpregnant\b/, /\bheadache\b/, /\bfever\b/, /\bpain\b(?!\s*(point|in the app))/,
+  ];
+  if (offTopicPatterns.some((p) => p.test(lower))) return true;
+  // If nothing app-related is mentioned, treat as off-topic
+  const appKeywords = [
+    "account", "register", "sign up", "login", "profile", "appointment", "book",
+    "booking", "reservation", "cancel", "reschedule", "view", "upcoming", "help",
+    "app", "rdv", "réservation", "compte", "profil", "موعد", "حجز", "تطبيق",
+    "where", "how do i", "how to",
+  ];
+  const looksAppRelated = appKeywords.some((k) => lower.includes(k));
+  return !looksAppRelated;
+}
+
 // Check if message is asking about appointments
 function isAskingAboutAppointments(message: string): boolean {
   const lower = message.toLowerCase();
@@ -128,6 +154,11 @@ export async function POST(req: NextRequest) {
         { error: "Message is required" },
         { status: 400 }
       );
+    }
+
+    // Refuse off-topic questions immediately — do not call the LLM
+    if (isOffTopic(message)) {
+      return NextResponse.json({ reply: REFUSAL_MESSAGE });
     }
 
     // Check if user is asking about appointments
@@ -192,7 +223,7 @@ export async function POST(req: NextRequest) {
               "Authorization": `Bearer ${openrouterKey}`,
               "Content-Type": "application/json",
               "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
-              "X-Title": "AppLab Medical Assistant"
+              "X-Title": "AppLab Appointment Assistant"
             },
             body: JSON.stringify({
               model,
@@ -268,22 +299,40 @@ export async function POST(req: NextRequest) {
   }
 }
 
+function isAppRelated(message: string): boolean {
+  const lower = message.toLowerCase();
+  const appKeywords = [
+    "account", "register", "sign up", "login", "log in", "profile",
+    "appointment", "book", "booking", "reservation", "cancel", "reschedule",
+    "view", "my appointment", "upcoming", "how to", "help", "use the app",
+    "rendez-vous", "rdv", "réservation", "compte", "profil",
+    "موعد", "حجز", "تطبيق",
+  ];
+  return appKeywords.some((k) => lower.includes(k));
+}
+
 function getFallbackResponse(message: string, appointmentContext?: string): string {
-  // Only handle appointment-related queries with context, everything else returns generic error
+  // Refuse off-topic questions even in fallback
+  if (!isAppRelated(message)) {
+    return REFUSAL_MESSAGE;
+  }
+  // Handle appointment-related queries when we have context
   if (appointmentContext && isAskingAboutAppointments(message)) {
     if (appointmentContext.includes("not logged in")) {
-      return "To view your appointments, please log in to your account first. Once logged in, I can tell you about your upcoming reservations! 🔐";
+      return "To view your appointments, please log in to your account first. Once logged in, I can tell you about your upcoming reservations.";
     }
     if (appointmentContext.includes("no appointments")) {
-      return "You don't have any appointments booked yet. Would you like to browse our services and book one? 📅";
+      return "You don't have any appointments booked yet. Would you like to browse our services and book one?";
     }
-    // Parse and return appointment info
-    const lines = appointmentContext.split('\n').filter(l => l.match(/^\d+\./));
+    const lines = appointmentContext.split("\n").filter((l) => l.match(/^\d+\./));
     if (lines.length > 0) {
-      return `Here are your upcoming appointments:\n\n${lines.join('\n')}\n\nIs there anything else you'd like to know?`;
+      return `Here are your upcoming appointments:\n\n${lines.join("\n")}\n\nIs there anything else you'd like to know about the app?`;
     }
   }
-
-  // Generic fallback when AI APIs are unavailable
-  return "I'm having trouble connecting to the AI service right now. Please try again in a moment. If this persists, you can browse our services directly from the sidebar.";
+  // Specific guidance when they ask where/how to book
+  if (message.toLowerCase().includes("where") && (message.toLowerCase().includes("book") || message.toLowerCase().includes("appointment"))) {
+    return "To book an appointment in the app: open the **Appointments** tab in the left menu (calendar icon). You'll see our services—click **Book Now** on the one you want, then choose a date and time and complete the booking.";
+  }
+  // API unavailable but question is app-related
+  return "I'm having trouble connecting right now. Please try again in a moment, or use the Appointments tab in the left menu to book and manage appointments.";
 }

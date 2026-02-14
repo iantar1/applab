@@ -4,59 +4,78 @@ const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const VOICE_ID = "JBFqnCBsd6RMkjVDRZzb";
 
-const SYSTEM_PROMPT = `You are a helpful medical AI assistant for AppLab, a healthcare appointment booking platform in Morocco. 
-Keep responses concise (2-3 sentences max) since they will be spoken aloud.
-You can help with:
-- General health questions and symptom guidance
-- Information about medical tests and services
-- Booking appointments
-- Insurance questions (Wafa Assurance, AXA, Sanlam, etc.)
+const REFUSAL_MESSAGE = "I am here only to help you use the hospital appointment app.";
 
-Always recommend consulting a real doctor for serious concerns. Be warm and professional.`;
+const APP_NAVIGATION_GUIDE = `Use this to guide users in the app: To book an appointment, go to the Appointments tab in the left menu, then click Book Now on a service and follow the steps. To view appointments, use the History tab. To change profile, use Settings.`;
+
+const SYSTEM_PROMPT = `You are an AI assistant for a hospital appointment web application (AppointLab).
+
+Your ONLY role is to guide users on how to use this application: creating an account, booking an appointment, viewing or cancelling appointments, updating profile.
+
+You MUST refuse medical advice, health diagnosis, general knowledge, and any question unrelated to the app. If the question is outside app usage context, reply only: "I am here only to help you use the hospital appointment app."
+
+When users ask where or how to book an appointment, guide them: open the Appointments tab in the left menu, choose a service and click Book Now, then pick date and time.
+
+Keep responses very short (2-3 sentences max) since they will be spoken aloud.
+${APP_NAVIGATION_GUIDE}`;
 
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
 }
 
-function getMedicalResponse(input: string): string {
+function isOffTopic(message: string): boolean {
+  const lower = message.toLowerCase().trim();
+  const offTopicPatterns = [
+    /\bcapital\b/, /\bcountry\b/, /\bcity\b/, /\bpopulation\b/, /\bweather\b/,
+    /\bhistory\b/, /\bwho is\b/, /\bwhere is\b/, /\bwhen did\b/, /\bhow many\b/,
+    /\brecipe\b/, /\bsport\b/, /\bmovie\b/, /\btrivia\b/,
+    /\bmedical\b/, /\bsymptom\b/, /\bdiagnos/, /\bdisease\b/, /\bmedication\b/,
+    /\bwhat is\b.*\b(morocco|france|usa|world|earth|country|capital)\b/,
+  ];
+  if (offTopicPatterns.some((p) => p.test(lower))) return true;
+  const appKeywords = [
+    "account", "register", "login", "profile", "appointment", "book", "booking",
+    "cancel", "view", "help", "app", "rdv", "réservation", "where", "how do i", "how to",
+  ];
+  return !appKeywords.some((k) => lower.includes(k));
+}
+
+function isAppRelated(input: string): boolean {
   const lower = input.toLowerCase();
-  
+  const appKeywords = [
+    "account", "register", "login", "profile", "appointment", "book", "booking",
+    "cancel", "view", "help", "use the app", "rdv", "réservation", "where", "how do i", "how to",
+  ];
+  return appKeywords.some((k) => lower.includes(k));
+}
+
+function getAppFallbackResponse(input: string): string {
+  if (!isAppRelated(input)) {
+    return REFUSAL_MESSAGE;
+  }
+  const lower = input.toLowerCase();
   if (lower.includes("hello") || lower.includes("hi")) {
-    return "Hello! I'm your medical assistant. How can I help you today?";
+    return "Hello! I'm here to help you use the appointment app. You can book, view, or cancel appointments. What would you like to do?";
   }
-  if (lower.includes("blood test")) {
-    return "We offer various blood tests including CBC, glucose, and cholesterol panels. Would you like to book one?";
+  if (lower.includes("appointment") || lower.includes("book") || lower.includes("where")) {
+    return "To book an appointment, open the Appointments tab in the left menu. Then click Book Now on the service you want and follow the steps to pick a date and time.";
   }
-  if (lower.includes("headache")) {
-    return "Headaches can have many causes like stress or dehydration. If it's severe or persistent, I recommend seeing a doctor.";
+  if (lower.includes("cancel")) {
+    return "To cancel an appointment, go to your appointments in the app and use the cancel option.";
   }
-  if (lower.includes("fever")) {
-    return "A fever usually means your body is fighting an infection. Rest and stay hydrated. See a doctor if it exceeds 39 degrees Celsius.";
+  if (lower.includes("thank") || lower.includes("bye")) {
+    return "You're welcome. If you need more help with the app, just ask.";
   }
-  if (lower.includes("appointment") || lower.includes("book")) {
-    return "You can book appointments through the app. Browse our services and select a convenient time.";
-  }
-  if (lower.includes("insurance")) {
-    return "We work with major insurers including Wafa Assurance, AXA, and Sanlam. You can add your insurance in the app settings.";
-  }
-  if (lower.includes("emergency")) {
-    return "If this is an emergency, please call 15 for SAMU or go to the nearest emergency room immediately.";
-  }
-  if (lower.includes("thank")) {
-    return "You're welcome! Take care of your health, and don't hesitate to reach out if you need anything.";
-  }
-  if (lower.includes("bye") || lower.includes("goodbye")) {
-    return "Goodbye! Stay healthy and feel free to come back anytime.";
-  }
-  
-  return "I can help you with health questions, booking appointments, or information about our services. What would you like to know?";
+  return "I can help you with booking, viewing, or cancelling appointments, or with your account. What do you need?";
 }
 
 async function getAIResponse(message: string, history: ChatMessage[]): Promise<string> {
-  // If no Gemini API key, use fallback
+  if (isOffTopic(message)) {
+    return REFUSAL_MESSAGE;
+  }
   if (!GEMINI_API_KEY) {
-    return getMedicalResponse(message);
+    return getAppFallbackResponse(message);
   }
 
   try {
@@ -85,13 +104,13 @@ async function getAIResponse(message: string, history: ChatMessage[]): Promise<s
     );
 
     if (!response.ok) {
-      return getMedicalResponse(message);
+      return getAppFallbackResponse(message);
     }
 
     const data = await response.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || getMedicalResponse(message);
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || getAppFallbackResponse(message);
   } catch {
-    return getMedicalResponse(message);
+    return getAppFallbackResponse(message);
   }
 }
 

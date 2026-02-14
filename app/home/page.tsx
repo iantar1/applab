@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { History, Shield, Calendar, Settings, LogOut, User, Clock, CalendarDays, Pencil, Plus, Trash2, MessageCircle } from 'lucide-react';
+import { History, Shield, Calendar, Settings, LogOut, User, Clock, CalendarDays, Pencil, Plus, Trash2, MessageCircle, Menu, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -100,6 +100,7 @@ function getNavItems(isAdmin: boolean): { id: NavItem; label: string; icon: Reac
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<NavItem>('history');
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [user, setUser] = useState<UserData | null>(null);
   const [services, setServices] = useState<Service[]>([]);
   const [appointments, setAppointments] = useState<AppointmentItem[]>([]);
@@ -1116,8 +1117,35 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen">
-      {/* Left Sidebar - fixed to viewport so it stays same size regardless of content */}
-      <aside className="fixed left-0 top-0 z-10 h-screen w-64 flex flex-col bg-primary text-white">
+      {/* Mobile top bar - menu button to show sections (hidden on desktop) */}
+      <header className="fixed top-0 left-0 right-0 z-20 flex md:hidden h-14 items-center justify-between px-4 bg-primary text-white border-b border-white/20">
+        <h1 className="text-xl font-bold">AppLab</h1>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-white hover:bg-white/10"
+          onClick={() => setMobileNavOpen((open) => !open)}
+          aria-label={mobileNavOpen ? 'Close menu' : 'Open menu'}
+        >
+          {mobileNavOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+        </Button>
+      </header>
+
+      {/* Overlay when mobile nav is open - tap to close */}
+      {mobileNavOpen && (
+        <div
+          className="fixed inset-0 z-20 bg-black/50 md:hidden"
+          aria-hidden
+          onClick={() => setMobileNavOpen(false)}
+        />
+      )}
+
+      {/* Left Sidebar - hidden on mobile until toggled; always visible on md+ */}
+      <aside
+        className={`fixed left-0 top-0 z-30 h-screen w-64 flex flex-col bg-primary text-white transition-transform duration-200 ease-out md:translate-x-0 ${
+          mobileNavOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
         <div className="shrink-0 p-6 border-b border-white/20">
           <h1 className="text-2xl font-bold">AppLab</h1>
           {user && (
@@ -1130,7 +1158,10 @@ export default function HomePage() {
             {getNavItems(user?.isAdmin ?? false).map((item) => (
               <li key={item.id}>
                 <button
-                  onClick={() => setActiveTab(item.id)}
+                  onClick={() => {
+                    setActiveTab(item.id);
+                    setMobileNavOpen(false);
+                  }}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
                     activeTab === item.id
                       ? 'bg-white/20 text-white'
@@ -1157,9 +1188,9 @@ export default function HomePage() {
         </div>
       </aside>
 
-      {/* Main Content - offset by sidebar width */}
-      <main className="ml-64 min-h-screen overflow-auto bg-gray-50">
-        <div className="p-8">
+      {/* Main Content - full width on mobile with top padding for header; offset by sidebar on desktop */}
+      <main className="pt-14 md:pt-0 md:ml-64 min-h-screen overflow-auto bg-gray-50">
+        <div className="p-4 sm:p-6 md:p-8">
           {renderContent()}
         </div>
       </main>

@@ -1119,7 +1119,7 @@ export default function HomePage() {
     <div className="min-h-screen">
       {/* Mobile top bar - menu button to show sections (hidden on desktop) */}
       <header className="fixed top-0 left-0 right-0 z-20 flex md:hidden h-14 items-center justify-between px-4 bg-primary text-white border-b border-white/20">
-        <h1 className="text-xl font-bold">AppLab</h1>
+        <h1 className="text-xl font-bold">AppointLab</h1>
         <Button
           variant="ghost"
           size="icon"
@@ -1147,7 +1147,7 @@ export default function HomePage() {
         }`}
       >
         <div className="shrink-0 p-6 border-b border-white/20">
-          <h1 className="text-2xl font-bold">AppLab</h1>
+          <h1 className="text-2xl font-bold">AppointLab</h1>
           {user && (
             <p className="text-sm text-white/70 mt-1">Welcome, <span className="font-bold text-white">{user.fullName}</span></p>
           )}

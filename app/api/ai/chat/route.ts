@@ -167,6 +167,7 @@ export async function POST(req: NextRequest) {
     // Try OpenRouter API first
     if (openrouterKey) {
       try {
+        console.log("Calling OpenRouter API...");
         const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
           method: "POST",
           headers: {
@@ -176,23 +177,28 @@ export async function POST(req: NextRequest) {
             "X-Title": "AppLab Medical Assistant"
           },
           body: JSON.stringify({
-            model: "meta-llama/llama-3.1-8b-instruct:free",
+            model: "liquid/lfm-2.5-1.2b-instruct:free",
             messages,
             max_tokens: 512,
             temperature: 0.7,
           }),
         });
 
-        if (response.ok) {
-          const data = await response.json();
-          const reply = data?.choices?.[0]?.message?.content;
-          if (reply) {
-            return NextResponse.json({ reply });
-          }
+        const data = await response.json();
+        console.log("OpenRouter response status:", response.status);
+        console.log("OpenRouter response data:", JSON.stringify(data).substring(0, 500));
+
+        if (response.ok && data?.choices?.[0]?.message?.content) {
+          const reply = data.choices[0].message.content;
+          return NextResponse.json({ reply });
+        } else if (data?.error) {
+          console.error("OpenRouter API error:", data.error);
         }
       } catch (e) {
-        console.error("OpenRouter API error:", e);
+        console.error("OpenRouter API exception:", e);
       }
+    } else {
+      console.log("No OpenRouter API key found");
     }
 
     // Fallback to Gemini if OpenRouter fails
@@ -228,7 +234,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Final fallback
+    // Final fallback - only for appointment context or errors
     return NextResponse.json({
       reply: getFallbackResponse(message, appointmentContext),
     });
@@ -242,68 +248,21 @@ export async function POST(req: NextRequest) {
 }
 
 function getFallbackResponse(message: string, appointmentContext?: string): string {
-  const lower = message.toLowerCase();
-
-  // If asking about appointments and we have context
+  // Only handle appointment-related queries with context, everything else returns generic error
   if (appointmentContext && isAskingAboutAppointments(message)) {
     if (appointmentContext.includes("not logged in")) {
       return "To view your appointments, please log in to your account first. Once logged in, I can tell you about your upcoming reservations! 🔐";
     }
     if (appointmentContext.includes("no appointments")) {
-      return "You don't have any appointments booked yet. Would you like me to help you find a service and book an appointment? 📅";
+      return "You don't have any appointments booked yet. Would you like to browse our services and book one? 📅";
     }
     // Parse and return appointment info
     const lines = appointmentContext.split('\n').filter(l => l.match(/^\d+\./));
     if (lines.length > 0) {
-      return `Here are your upcoming appointments:\n\n${lines.join('\n')}\n\nIs there anything else you'd like to know about your reservations?`;
+      return `Here are your upcoming appointments:\n\n${lines.join('\n')}\n\nIs there anything else you'd like to know?`;
     }
   }
 
-  if (
-    lower.includes("emergency") ||
-    lower.includes("urgence") ||
-    lower.includes("dying") ||
-    lower.includes("heart attack")
-  ) {
-    return "🚨 If you are experiencing a medical emergency, please call emergency services (15 in Morocco, 112 in Europe, 911 in the US) immediately! Do not wait.";
-  }
-
-  if (
-    lower.includes("blood test") ||
-    lower.includes("analyse de sang") ||
-    lower.includes("blood work")
-  ) {
-    return "Blood tests are common diagnostic tools that can check for many conditions including cholesterol levels, blood sugar, liver/kidney function, and more. They usually take about 10-15 minutes. You can book a blood test appointment through our services. Would you like to know more about a specific blood test?";
-  }
-
-  if (
-    lower.includes("symptom") ||
-    lower.includes("symptôme") ||
-    lower.includes("feel sick") ||
-    lower.includes("pain")
-  ) {
-    return "I understand you're not feeling well. While I can provide general information, I strongly recommend booking an appointment with a healthcare professional for a proper evaluation. You can browse our available services and book an appointment right from this app. Is there a specific symptom you'd like to know more about?";
-  }
-
-  if (
-    lower.includes("appointment") ||
-    lower.includes("rendez-vous") ||
-    lower.includes("book")
-  ) {
-    return "To book an appointment, go to the 'Appointments' tab in the sidebar, browse our available medical services, and click 'Book Now' on the service you need. You can select your preferred date and time. Need help choosing the right service?";
-  }
-
-  if (
-    lower.includes("insurance") ||
-    lower.includes("assurance") ||
-    lower.includes("mutuelle")
-  ) {
-    return "You can manage your insurance information in the 'Insurance' tab in the sidebar. We support major Moroccan insurance companies including Wafa Assurance, AXA, Sanlam, and more. Having your insurance details saved makes the booking process faster.";
-  }
-
-  if (lower.includes("hello") || lower.includes("hi") || lower.includes("bonjour") || lower.includes("salut")) {
-    return "Hello! 👋 I'm your medical AI assistant. I can help you with general health questions, explain medical tests, or help you find the right service to book. How can I help you today?";
-  }
-
-  return "I'm your medical AI assistant and I'm here to help with health-related questions. I can help you understand medical tests, explain symptoms, provide wellness advice, or help you book the right appointment. What would you like to know? \n\n⚠️ Remember: I'm an AI assistant and not a substitute for professional medical advice.";
+  // Generic fallback when AI APIs are unavailable
+  return "I'm having trouble connecting to the AI service right now. Please try again in a moment. If this persists, you can browse our services directly from the sidebar.";
 }

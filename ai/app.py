@@ -48,7 +48,7 @@ def listen_to_microphone():
             return None
 
 def get_ai_response(user_input):
-    """Get response from OpenRouter AI"""
+    """Get response from OpenRouter AI - Dynamic agent responses"""
     global conversation_history
     
     # Add user message to history
@@ -58,6 +58,7 @@ def get_ai_response(user_input):
     messages = [{"role": "system", "content": SYSTEM_PROMPT}] + conversation_history[-10:]
     
     try:
+        print("🤖 Thinking...")
         response = requests.post(
             OPENROUTER_URL,
             headers={
@@ -67,9 +68,9 @@ def get_ai_response(user_input):
                 "X-Title": "AppLab Medical Assistant"
             },
             json={
-                "model": "meta-llama/llama-3.1-8b-instruct:free",
+                "model": "meta-llama/llama-3.3-70b-instruct:free",
                 "messages": messages,
-                "max_tokens": 150,
+                "max_tokens": 200,
                 "temperature": 0.7
             },
             timeout=30
@@ -82,27 +83,15 @@ def get_ai_response(user_input):
             conversation_history.append({"role": "assistant", "content": ai_reply})
             return ai_reply
         else:
-            print(f"OpenRouter API error: {response.status_code} - {response.text}")
-            return get_fallback_response(user_input)
+            print(f"⚠️ API error: {response.status_code}")
+            return "I'm having trouble connecting right now. Please try again in a moment."
             
+    except requests.exceptions.Timeout:
+        print("⚠️ Request timed out")
+        return "The request took too long. Please try again."
     except Exception as e:
-        print(f"Error calling OpenRouter: {e}")
-        return get_fallback_response(user_input)
-
-def get_fallback_response(user_input):
-    """Fallback responses if API fails"""
-    lower = user_input.lower()
-    
-    if "hello" in lower or "hi" in lower:
-        return "Hello! I'm your medical assistant. How can I help you today?"
-    if "appointment" in lower or "book" in lower:
-        return "You can book appointments through the AppLab app. Browse our services and select a convenient time."
-    if "blood test" in lower:
-        return "We offer various blood tests including CBC, glucose, and cholesterol panels. Would you like to book one?"
-    if "emergency" in lower:
-        return "If this is an emergency, please call 15 for SAMU or go to the nearest emergency room immediately!"
-    
-    return "I can help you with health questions, booking appointments, or information about our services. What would you like to know?"
+        print(f"⚠️ Error: {e}")
+        return "Sorry, I encountered an error. Please try again."
 
 def speak_text(text):
     """Convert text to speech using ElevenLabs and play it"""

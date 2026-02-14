@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyJwt } from '@/lib/auth';
+import { sendConfirmationWhatsApp } from '@/lib/notification-service';
 
 /**
  * GET: List appointments for the current user (by userId or guest email/phone).
@@ -182,6 +183,29 @@ export async function POST(request: Request) {
         service: true,
       },
     });
+
+    // Send WhatsApp confirmation message
+    const contactPhone = phone || currentUser.phone;
+    const contactName = name || currentUser.email?.split('@')[0] || 'Guest';
+
+    if (contactPhone) {
+      try {
+        await sendConfirmationWhatsApp({
+          bookingId: parseInt(appointment.id),
+          email: '',
+          phone: contactPhone,
+          name: contactName,
+          serviceName: service.name,
+          appointmentDate: appointment.appointmentDate.toISOString().split('T')[0],
+          appointmentTime: appointment.appointmentTime,
+          type: 'confirmation',
+        });
+        console.log('WhatsApp confirmation sent to:', contactPhone);
+      } catch (error) {
+        console.error('Error sending WhatsApp confirmation:', error);
+        // Don't fail the appointment creation if WhatsApp fails
+      }
+    }
 
     return NextResponse.json({ appointment }, { status: 201 });
   } catch (error: unknown) {

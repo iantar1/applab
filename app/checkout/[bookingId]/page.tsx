@@ -13,6 +13,7 @@ interface Booking {
   name: string;
   email: string;
   phone: string;
+  cin?: string;
   serviceId?: string | number;
   serviceName: string;
   price: number;
@@ -62,6 +63,7 @@ export default function CheckoutPage() {
           name: booking.name,
           email: booking.email,
           phone: booking.phone,
+          cin: booking.cin,
           serviceId: booking.serviceId,
           serviceName: booking.serviceName,
           price: booking.price,

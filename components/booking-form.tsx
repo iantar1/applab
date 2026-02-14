@@ -71,10 +71,12 @@ export function BookingForm({ serviceId, serviceName, price }: BookingFormProps)
     name: '',
     email: '',
     phone: '',
+    cin: '',
     appointmentDate: '',
     appointmentTime: '',
     notes: ''
   });
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -82,12 +84,17 @@ export function BookingForm({ serviceId, serviceName, price }: BookingFormProps)
         const res = await fetch('/api/auth/me');
         const data = await res.json();
         if (data.user) {
-          setFormData(prev => ({
-            ...prev,
-            name: data.user.fullName ?? '',
-            email: data.user.email ?? '',
-            phone: data.user.phone ?? '',
-          }));
+          const admin = data.user.isAdmin === true;
+          setIsAdmin(admin);
+          if (!admin) {
+            setFormData(prev => ({
+              ...prev,
+              name: data.user.fullName ?? '',
+              email: data.user.email ?? '',
+              phone: data.user.phone ?? '',
+              cin: data.user.cin ?? '',
+            }));
+          }
         } else {
           router.push('/login');
           return;
@@ -147,10 +154,16 @@ export function BookingForm({ serviceId, serviceName, price }: BookingFormProps)
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...formData,
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          cin: formData.cin || undefined,
+          appointmentDate: formData.appointmentDate,
+          appointmentTime: formData.appointmentTime,
+          notes: formData.notes,
           serviceId,
           serviceName,
-          price
+          price,
         })
       });
 
@@ -208,6 +221,69 @@ export function BookingForm({ serviceId, serviceName, price }: BookingFormProps)
           {!userLoaded && (
             <div className="text-sm text-muted-foreground py-2">Loading your account...</div>
           )}
+
+          {isAdmin && (
+            <p className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md">
+              Booking for another person. Enter their details below. You cannot book for yourself.
+            </p>
+          )}
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="booking-name">Full name</Label>
+              <input
+                id="booking-name"
+                name="name"
+                type="text"
+                value={formData.name}
+                onChange={handleChange}
+                placeholder={isAdmin ? "Guest's full name" : 'Your full name'}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="booking-email">Email</Label>
+              <input
+                id="booking-email"
+                name="email"
+                type="email"
+                value={formData.email}
+                onChange={handleChange}
+                placeholder={isAdmin ? "Guest's email" : 'your@email.com'}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                required
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="booking-phone">Phone number</Label>
+              <input
+                id="booking-phone"
+                name="phone"
+                type="tel"
+                value={formData.phone}
+                onChange={handleChange}
+                placeholder={isAdmin ? "Guest's phone" : '+212 600 000 000'}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="booking-cin">CIN</Label>
+              <input
+                id="booking-cin"
+                name="cin"
+                type="text"
+                value={formData.cin}
+                onChange={handleChange}
+                placeholder={isAdmin ? "Guest's CIN" : 'National ID'}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                required={isAdmin}
+              />
+            </div>
+          </div>
 
           <div className="space-y-2 relative">
             <Label>Appointment Date</Label>
@@ -328,7 +404,16 @@ export function BookingForm({ serviceId, serviceName, price }: BookingFormProps)
 
           <Button
             type="submit"
-            disabled={loading || !userLoaded || !formData.name || !formData.email || !formData.phone || !formData.appointmentDate || !formData.appointmentTime}
+            disabled={
+              loading ||
+              !userLoaded ||
+              !formData.name ||
+              !formData.email ||
+              !formData.phone ||
+              (isAdmin && !formData.cin) ||
+              !formData.appointmentDate ||
+              !formData.appointmentTime
+            }
             className="w-full bg-primary hover:bg-primary/90"
             size="lg"
           >

@@ -1,12 +1,50 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { History, Shield, Calendar, Settings, LogOut, User, Clock, CalendarDays } from 'lucide-react';
+import { History, Shield, Calendar, Settings, LogOut, User, Clock, CalendarDays, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useRouter } from 'next/navigation';
 import { formatCurrency } from '@/lib/utils';
+
+const INSURANCE_COMPANIES = [
+  'Wafa Assurance',
+  "RMA – Royale Marocaine d'Assurances",
+  'AXA Assurance Maroc',
+  'Sanlam Maroc',
+  'AtlantaSanad Assurance',
+  'MCMA (Mutuelle Centrale Marocaine d\'Assurances)',
+  'La Marocaine Vie',
+];
 
 type NavItem = 'history' | 'insurance' | 'appointments' | 'settings';
 
@@ -16,6 +54,7 @@ interface UserData {
   phone: string;
   email?: string;
   cin?: string;
+  isAdmin?: boolean;
 }
 
 interface Service {
@@ -35,6 +74,16 @@ interface AppointmentItem {
   status: string;
   service: { name: string; category: string };
   guestName?: string | null;
+  guestEmail?: string | null;
+  guestPhone?: string | null;
+  user?: { id: string; fullName: string; email: string; phone: string } | null;
+}
+
+interface InsuranceData {
+  id: string;
+  insuranceCompany: string;
+  membershipNumber: string;
+  contractNumber: string;
 }
 
 const navItems: { id: NavItem; label: string; icon: React.ReactNode }[] = [
@@ -45,13 +94,48 @@ const navItems: { id: NavItem; label: string; icon: React.ReactNode }[] = [
 ];
 
 export default function HomePage() {
-  const [activeTab, setActiveTab] = useState<NavItem>('appointments');
+  const [activeTab, setActiveTab] = useState<NavItem>('history');
   const [user, setUser] = useState<UserData | null>(null);
   const [services, setServices] = useState<Service[]>([]);
   const [appointments, setAppointments] = useState<AppointmentItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [servicesLoading, setServicesLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [insurance, setInsurance] = useState<InsuranceData | null>(null);
+  const [insuranceLoading, setInsuranceLoading] = useState(false);
+  const [insuranceSaving, setInsuranceSaving] = useState(false);
+  const [insuranceEditing, setInsuranceEditing] = useState(false);
+  const [insuranceForm, setInsuranceForm] = useState({
+    insuranceCompany: '',
+    membershipNumber: '',
+    contractNumber: '',
+  });
+  const [settingsForm, setSettingsForm] = useState({
+    fullName: '',
+    email: '',
+    phone: '',
+    cin: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [settingsSuccess, setSettingsSuccess] = useState(false);
+  // Admin: service management
+  const [serviceDialogOpen, setServiceDialogOpen] = useState(false);
+  const [serviceDialogMode, setServiceDialogMode] = useState<'create' | 'edit'>('create');
+  const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
+  const [serviceForm, setServiceForm] = useState({
+    name: '',
+    description: '',
+    price: '',
+    category: '',
+    duration: '30',
+  });
+  const [serviceSaving, setServiceSaving] = useState(false);
+  const [serviceError, setServiceError] = useState<string | null>(null);
+  const [deleteServiceId, setDeleteServiceId] = useState<string | null>(null);
+  const [deletingService, setDeletingService] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -61,6 +145,14 @@ export default function HomePage() {
         const data = await res.json();
         if (data.user) {
           setUser(data.user);
+          setSettingsForm({
+            fullName: data.user.fullName ?? '',
+            email: data.user.email ?? '',
+            phone: data.user.phone ?? '',
+            cin: data.user.cin ?? '',
+            newPassword: '',
+            confirmPassword: '',
+          });
         } else {
           router.push('/login');
         }
@@ -74,21 +166,132 @@ export default function HomePage() {
     fetchUser();
   }, [router]);
 
-  useEffect(() => {
-    const fetchServices = async () => {
-      try {
-        const res = await fetch('/api/services');
-        const data = await res.json();
-        if (data.services) {
-          setServices(data.services);
-        }
-      } catch (error) {
-        console.error('Error fetching services:', error);
-      } finally {
-        setServicesLoading(false);
+  const fetchServices = async () => {
+    try {
+      const res = await fetch('/api/services');
+      const data = await res.json();
+      if (data.services) {
+        setServices(data.services);
       }
-    };
+    } catch (error) {
+      console.error('Error fetching services:', error);
+    } finally {
+      setServicesLoading(false);
+    }
+  };
 
+  function openCreateService() {
+    setServiceDialogMode('create');
+    setEditingServiceId(null);
+    setServiceForm({ name: '', description: '', price: '', category: '', duration: '30' });
+    setServiceError(null);
+    setServiceDialogOpen(true);
+  }
+
+  function openEditService(service: Service) {
+    setServiceDialogMode('edit');
+    setEditingServiceId(String(service.id));
+    setServiceForm({
+      name: service.name,
+      description: service.description ?? '',
+      price: String(service.price),
+      category: service.category,
+      duration: String(service.duration ?? 30),
+    });
+    setServiceError(null);
+    setServiceDialogOpen(true);
+  }
+
+  async function saveService() {
+    setServiceError(null);
+    const price = parseFloat(serviceForm.price);
+    const duration = parseInt(serviceForm.duration, 10);
+    if (!serviceForm.name.trim()) {
+      setServiceError('Name is required');
+      return;
+    }
+    if (Number.isNaN(price) || price < 0) {
+      setServiceError('Valid price is required');
+      return;
+    }
+    if (!serviceForm.category.trim()) {
+      setServiceError('Category is required');
+      return;
+    }
+    if (Number.isNaN(duration) || duration < 1) {
+      setServiceError('Duration must be at least 1 minute');
+      return;
+    }
+    setServiceSaving(true);
+    try {
+      if (serviceDialogMode === 'create') {
+        const res = await fetch('/api/services', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: serviceForm.name.trim(),
+            description: serviceForm.description.trim() || undefined,
+            price,
+            category: serviceForm.category.trim(),
+            duration,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setServiceError(data.details ?? data.error ?? 'Failed to create service');
+          return;
+        }
+        setServiceDialogOpen(false);
+        setServicesLoading(true);
+        await fetchServices();
+      } else if (editingServiceId) {
+        const res = await fetch(`/api/services/${editingServiceId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: serviceForm.name.trim(),
+            description: serviceForm.description.trim() || undefined,
+            price,
+            category: serviceForm.category.trim(),
+            duration,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setServiceError(data.details ?? data.error ?? 'Failed to update service');
+          return;
+        }
+        setServiceDialogOpen(false);
+        setServicesLoading(true);
+        await fetchServices();
+      }
+    } catch (e) {
+      setServiceError('Something went wrong');
+    } finally {
+      setServiceSaving(false);
+    }
+  }
+
+  async function confirmDeleteService(id: string) {
+    setDeletingService(true);
+    try {
+      const res = await fetch(`/api/services/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json();
+        setServiceError(data.error ?? 'Failed to delete service');
+        return;
+      }
+      setDeleteServiceId(null);
+      setServicesLoading(true);
+      await fetchServices();
+    } catch (e) {
+      setServiceError('Something went wrong');
+    } finally {
+      setDeletingService(false);
+    }
+  }
+
+  useEffect(() => {
     fetchServices();
   }, []);
 
@@ -120,6 +323,39 @@ export default function HomePage() {
     return () => { cancelled = true; };
   }, [activeTab, router]);
 
+  useEffect(() => {
+    if (activeTab !== 'insurance') return;
+    let cancelled = false;
+    setInsuranceLoading(true);
+    const fetchInsurance = async () => {
+      try {
+        const res = await fetch('/api/insurance');
+        if (res.status === 401) {
+          router.push('/login');
+          return;
+        }
+        const data = await res.json();
+        if (!cancelled && data.insurance) {
+          setInsurance(data.insurance);
+          setInsuranceForm({
+            insuranceCompany: data.insurance.insuranceCompany,
+            membershipNumber: data.insurance.membershipNumber,
+            contractNumber: data.insurance.contractNumber,
+          });
+        } else if (!cancelled) {
+          setInsurance(null);
+          setInsuranceForm({ insuranceCompany: '', membershipNumber: '', contractNumber: '' });
+        }
+      } catch (error) {
+        console.error('Error fetching insurance:', error);
+      } finally {
+        if (!cancelled) setInsuranceLoading(false);
+      }
+    };
+    fetchInsurance();
+    return () => { cancelled = true; };
+  }, [activeTab, router]);
+
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
     router.push('/login');
@@ -127,6 +363,76 @@ export default function HomePage() {
 
   const handleBookService = (serviceId: number | string) => {
     router.push(`/services/${serviceId}`);
+  };
+
+  const handleSaveInsurance = async () => {
+    if (!insuranceForm.insuranceCompany.trim() || !insuranceForm.membershipNumber.trim() || !insuranceForm.contractNumber.trim()) {
+      return;
+    }
+    setInsuranceSaving(true);
+    try {
+      const res = await fetch('/api/insurance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(insuranceForm),
+      });
+      const data = await res.json();
+      if (data.insurance) {
+        setInsurance(data.insurance);
+        setInsuranceEditing(false);
+      }
+    } catch (error) {
+      console.error('Error saving insurance:', error);
+    } finally {
+      setInsuranceSaving(false);
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    setSettingsError(null);
+    setSettingsSuccess(false);
+    const { fullName, email, phone, cin, newPassword, confirmPassword } = settingsForm;
+    if (!fullName.trim() || !email.trim() || !phone.trim() || !cin.trim()) {
+      setSettingsError('Name, email, phone and CIN are required.');
+      return;
+    }
+    if (newPassword && newPassword !== confirmPassword) {
+      setSettingsError('New password and confirmation do not match.');
+      return;
+    }
+    if (newPassword && newPassword.length < 6) {
+      setSettingsError('Password must be at least 6 characters.');
+      return;
+    }
+    setSettingsSaving(true);
+    try {
+      const body: { fullName: string; email: string; phone: string; cin: string; password?: string } = {
+        fullName: fullName.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        cin: cin.trim(),
+      };
+      if (newPassword.trim()) body.password = newPassword.trim();
+      const res = await fetch('/api/auth/me', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSettingsError(data.error ?? 'Failed to update profile');
+        return;
+      }
+      if (data.user) {
+        setUser(data.user);
+        setSettingsForm((prev) => ({ ...prev, newPassword: '', confirmPassword: '' }));
+        setSettingsSuccess(true);
+      }
+    } catch (error) {
+      setSettingsError('Failed to update profile');
+    } finally {
+      setSettingsSaving(false);
+    }
   };
 
   if (loading) {
@@ -142,9 +448,17 @@ export default function HomePage() {
       case 'appointments':
         return (
           <div className="w-full">
-            <div className="mb-8">
-              <h2 className="text-3xl font-bold text-gray-800">Book an Appointment</h2>
-              <p className="text-gray-500 mt-2">Select a service to schedule your appointment</p>
+            <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h2 className="text-3xl font-bold text-gray-800">Book an Appointment</h2>
+                <p className="text-gray-500 mt-2">Select a service to schedule your appointment</p>
+              </div>
+              {user?.isAdmin && (
+                <Button onClick={openCreateService} variant="outline" size="sm">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add service
+                </Button>
+              )}
             </div>
             
             {servicesLoading ? (
@@ -156,9 +470,33 @@ export default function HomePage() {
                 {services.map((service) => (
                   <Card key={service.id} className="hover:shadow-lg transition-shadow">
                     <CardHeader>
-                      <div className="flex justify-between items-start">
-                        <CardTitle className="text-lg">{service.name}</CardTitle>
-                        <Badge variant="secondary">{service.category}</Badge>
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="min-w-0 flex-1">
+                          <CardTitle className="text-lg">{service.name}</CardTitle>
+                          <Badge variant="secondary" className="mt-1">{service.category}</Badge>
+                        </div>
+                        {user?.isAdmin && (
+                          <div className="flex items-center gap-1 shrink-0">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => openEditService(service)}
+                              aria-label="Edit service"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive hover:text-destructive"
+                              onClick={() => setDeleteServiceId(String(service.id))}
+                              aria-label="Delete service"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        )}
                       </div>
                       <CardDescription>{service.description}</CardDescription>
                     </CardHeader>
@@ -192,7 +530,7 @@ export default function HomePage() {
           <div className="w-full">
             <div className="mb-8">
               <h2 className="text-3xl font-bold text-gray-800">Appointment History</h2>
-              <p className="text-gray-500 mt-2">All your booked appointments</p>
+              <p className="text-gray-500 mt-2">{user?.isAdmin ? 'All appointments (admin view)' : 'All your booked appointments'}</p>
             </div>
             {historyLoading ? (
               <div className="text-center py-12">
@@ -233,6 +571,14 @@ export default function HomePage() {
                         </div>
                       </CardHeader>
                       <CardContent className="space-y-1 text-sm text-gray-600">
+                        {(user?.isAdmin && (apt.user || apt.guestName)) && (
+                          <div className="flex items-center gap-2 pb-1">
+                            <User className="h-4 w-4 text-gray-500" />
+                            <span className="font-medium text-gray-800">
+                              {apt.user ? apt.user.fullName : (apt.guestName || 'Guest')}
+                            </span>
+                          </div>
+                        )}
                         <div className="flex items-center gap-2">
                           <Calendar className="h-4 w-4 text-gray-500" />
                           <span>{dateStr}</span>
@@ -242,6 +588,11 @@ export default function HomePage() {
                           <span>{timeStr}</span>
                         </div>
                         <p className="font-semibold text-primary pt-2">{formatCurrency(apt.totalPrice)}</p>
+                        {user?.isAdmin && apt.user?.id === user?.id && (apt.guestName || apt.guestEmail) && (
+                          <p className="text-xs font-bold text-muted-foreground pt-2 border-t mt-2">
+                            Booked for: {apt.guestName || apt.guestEmail || 'Guest'}
+                          </p>
+                        )}
                       </CardContent>
                     </Card>
                   );
@@ -252,30 +603,242 @@ export default function HomePage() {
         );
       case 'settings':
         return (
-          <div className="text-center">
-            <div className="inline-flex items-center justify-center w-20 h-20 bg-primary/10 rounded-full mb-4">
-              <User className="h-10 w-10 text-primary" />
+          <div className="w-full">
+            <div className="mb-8">
+              <h2 className="text-3xl font-bold text-gray-800">Settings</h2>
+              <p className="text-gray-500 mt-2">Update your profile information</p>
             </div>
-            <h2 className="text-3xl font-bold text-gray-700 mb-6">Settings</h2>
-            <div className="bg-white rounded-lg shadow p-6 max-w-md mx-auto text-left">
-              <h3 className="text-lg font-semibold mb-4 text-gray-800">User Information</h3>
-              <div className="space-y-3">
-                <div>
-                  <label className="text-sm text-gray-500">Full Name</label>
-                  <p className="text-gray-800 font-medium">{user?.fullName || 'N/A'}</p>
-                </div>
-                <div>
-                  <label className="text-sm text-gray-500">Phone</label>
-                  <p className="text-gray-800 font-medium">{user?.phone || 'N/A'}</p>
-                </div>
-                {user?.cin && (
-                  <div>
-                    <label className="text-sm text-gray-500">CIN</label>
-                    <p className="text-gray-800 font-medium">{user.cin}</p>
+            <Card className="max-w-lg">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <User className="h-5 w-5" />
+                  Profile
+                </CardTitle>
+                <CardDescription>Change your name, email, phone, CIN, or password.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {settingsError && (
+                  <div className="rounded-md bg-destructive/10 text-destructive text-sm px-3 py-2">
+                    {settingsError}
                   </div>
                 )}
-              </div>
+                {settingsSuccess && (
+                  <div className="rounded-md bg-green-500/10 text-green-700 text-sm px-3 py-2">
+                    Profile updated successfully.
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="settings-fullName">Full name</Label>
+                  <Input
+                    id="settings-fullName"
+                    value={settingsForm.fullName}
+                    onChange={(e) =>
+                      setSettingsForm((prev) => ({ ...prev, fullName: e.target.value }))
+                    }
+                    placeholder="Your full name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="settings-email">Email</Label>
+                  <Input
+                    id="settings-email"
+                    type="email"
+                    value={settingsForm.email}
+                    onChange={(e) =>
+                      setSettingsForm((prev) => ({ ...prev, email: e.target.value }))
+                    }
+                    placeholder="your@email.com"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="settings-phone">Phone number</Label>
+                  <Input
+                    id="settings-phone"
+                    type="tel"
+                    value={settingsForm.phone}
+                    onChange={(e) =>
+                      setSettingsForm((prev) => ({ ...prev, phone: e.target.value }))
+                    }
+                    placeholder="Phone number"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="settings-cin">CIN</Label>
+                  <Input
+                    id="settings-cin"
+                    value={settingsForm.cin}
+                    onChange={(e) =>
+                      setSettingsForm((prev) => ({ ...prev, cin: e.target.value }))
+                    }
+                    placeholder="CIN"
+                  />
+                </div>
+                <div className="pt-2 border-t">
+                  <p className="text-sm text-gray-500 mb-2">Change password (leave blank to keep current)</p>
+                  <div className="space-y-2">
+                    <Label htmlFor="settings-newPassword">New password</Label>
+                    <Input
+                      id="settings-newPassword"
+                      type="password"
+                      value={settingsForm.newPassword}
+                      onChange={(e) =>
+                        setSettingsForm((prev) => ({ ...prev, newPassword: e.target.value }))
+                      }
+                      placeholder="New password"
+                      autoComplete="new-password"
+                    />
+                  </div>
+                  <div className="space-y-2 mt-2">
+                    <Label htmlFor="settings-confirmPassword">Confirm new password</Label>
+                    <Input
+                      id="settings-confirmPassword"
+                      type="password"
+                      value={settingsForm.confirmPassword}
+                      onChange={(e) =>
+                        setSettingsForm((prev) => ({ ...prev, confirmPassword: e.target.value }))
+                      }
+                      placeholder="Confirm new password"
+                      autoComplete="new-password"
+                    />
+                  </div>
+                </div>
+              </CardContent>
+              <CardFooter>
+                <Button onClick={handleSaveSettings} disabled={settingsSaving}>
+                  {settingsSaving ? 'Saving...' : 'Save changes'}
+                </Button>
+              </CardFooter>
+            </Card>
+          </div>
+        );
+      case 'insurance':
+        return (
+          <div className="w-full">
+            <div className="mb-8">
+              <h2 className="text-3xl font-bold text-gray-800">Insurance Information</h2>
+              <p className="text-gray-500 mt-2">
+                {insurance
+                  ? 'Your saved insurance details. You can edit them anytime.'
+                  : 'Add your insurance details to use them when booking appointments.'}
+              </p>
             </div>
+            {insuranceLoading ? (
+              <div className="text-center py-12">
+                <p className="text-gray-500">Loading insurance...</p>
+              </div>
+            ) : !insurance || insuranceEditing ? (
+              <Card className="max-w-lg">
+                <CardHeader>
+                  <CardTitle>Insurance details</CardTitle>
+                  <CardDescription>
+                    Select your insurance company and enter your membership and contract numbers.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="insurance-company">Insurance company</Label>
+                    <Select
+                      value={insuranceForm.insuranceCompany || undefined}
+                      onValueChange={(v) =>
+                        setInsuranceForm((prev) => ({ ...prev, insuranceCompany: v }))
+                      }
+                    >
+                      <SelectTrigger id="insurance-company">
+                        <SelectValue placeholder="Choose a company" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {INSURANCE_COMPANIES.map((name) => (
+                          <SelectItem key={name} value={name}>
+                            {name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="membership-number">Membership number</Label>
+                    <Input
+                      id="membership-number"
+                      value={insuranceForm.membershipNumber}
+                      onChange={(e) =>
+                        setInsuranceForm((prev) => ({ ...prev, membershipNumber: e.target.value }))
+                      }
+                      placeholder="Enter membership number"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="contract-number">Contract number</Label>
+                    <Input
+                      id="contract-number"
+                      value={insuranceForm.contractNumber}
+                      onChange={(e) =>
+                        setInsuranceForm((prev) => ({ ...prev, contractNumber: e.target.value }))
+                      }
+                      placeholder="Enter contract number"
+                    />
+                  </div>
+                </CardContent>
+                <CardFooter>
+                  <Button onClick={handleSaveInsurance} disabled={insuranceSaving}>
+                    {insuranceSaving ? 'Saving...' : 'Save'}
+                  </Button>
+                  {insurance && (
+                    <Button
+                      variant="outline"
+                      className="ml-2"
+                      onClick={() => {
+                        setInsuranceEditing(false);
+                        setInsuranceForm({
+                          insuranceCompany: insurance.insuranceCompany,
+                          membershipNumber: insurance.membershipNumber,
+                          contractNumber: insurance.contractNumber,
+                        });
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                </CardFooter>
+              </Card>
+            ) : (
+              <Card className="max-w-lg">
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <Shield className="h-5 w-5" />
+                    Insurance details
+                  </CardTitle>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setInsuranceEditing(true);
+                      setInsuranceForm({
+                        insuranceCompany: insurance.insuranceCompany,
+                        membershipNumber: insurance.membershipNumber,
+                        contractNumber: insurance.contractNumber,
+                      });
+                    }}
+                  >
+                    <Pencil className="h-4 w-4 mr-1" />
+                    Edit
+                  </Button>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div>
+                    <label className="text-sm text-gray-500">Insurance company</label>
+                    <p className="text-gray-800 font-medium">{insurance.insuranceCompany}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-500">Membership number</label>
+                    <p className="text-gray-800 font-medium">{insurance.membershipNumber}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-500">Contract number</label>
+                    <p className="text-gray-800 font-medium">{insurance.contractNumber}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
         );
       default:
@@ -293,17 +856,17 @@ export default function HomePage() {
   };
 
   return (
-    <div className="flex min-h-screen">
-      {/* Left Sidebar */}
-      <aside className="w-64 bg-primary text-white flex flex-col">
-        <div className="p-6 border-b border-white/20">
+    <div className="min-h-screen">
+      {/* Left Sidebar - fixed to viewport so it stays same size regardless of content */}
+      <aside className="fixed left-0 top-0 z-10 h-screen w-64 flex flex-col bg-primary text-white">
+        <div className="shrink-0 p-6 border-b border-white/20">
           <h1 className="text-2xl font-bold">AppLab</h1>
           {user && (
-            <p className="text-sm text-white/70 mt-1">Welcome, {user.fullName}</p>
+            <p className="text-sm text-white/70 mt-1">Welcome, <span className="font-bold text-white">{user.fullName}</span></p>
           )}
         </div>
-        
-        <nav className="flex-1 p-4">
+
+        <nav className="min-h-0 flex-1 overflow-y-auto p-4">
           <ul className="space-y-2">
             {navItems.map((item) => (
               <li key={item.id}>
@@ -323,7 +886,7 @@ export default function HomePage() {
           </ul>
         </nav>
 
-        <div className="p-4 border-t border-white/20">
+        <div className="shrink-0 p-4 border-t border-white/20">
           <Button
             variant="ghost"
             className="w-full justify-start gap-3 text-white/70 hover:text-white hover:bg-white/10"
@@ -335,12 +898,114 @@ export default function HomePage() {
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 bg-gray-50 overflow-auto">
+      {/* Main Content - offset by sidebar width */}
+      <main className="ml-64 min-h-screen overflow-auto bg-gray-50">
         <div className="p-8">
           {renderContent()}
         </div>
       </main>
+
+      {/* Admin: Create/Edit service dialog */}
+      <Dialog open={serviceDialogOpen} onOpenChange={setServiceDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{serviceDialogMode === 'create' ? 'Add service' : 'Edit service'}</DialogTitle>
+            <DialogDescription>
+              {serviceDialogMode === 'create'
+                ? 'Create a new service that users can book.'
+                : 'Update the service details.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {serviceError && (
+              <p className="text-sm text-destructive">{serviceError}</p>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="service-name">Name</Label>
+              <Input
+                id="service-name"
+                value={serviceForm.name}
+                onChange={(e) => setServiceForm((prev) => ({ ...prev, name: e.target.value }))}
+                placeholder="e.g. Blood Glucose Test"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="service-description">Description (optional)</Label>
+              <Textarea
+                id="service-description"
+                value={serviceForm.description}
+                onChange={(e) => setServiceForm((prev) => ({ ...prev, description: e.target.value }))}
+                placeholder="Brief description of the service"
+                rows={3}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="service-price">Price (MAD)</Label>
+                <Input
+                  id="service-price"
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={serviceForm.price}
+                  onChange={(e) => setServiceForm((prev) => ({ ...prev, price: e.target.value }))}
+                  placeholder="100"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="service-duration">Duration (min)</Label>
+                <Input
+                  id="service-duration"
+                  type="number"
+                  min={1}
+                  value={serviceForm.duration}
+                  onChange={(e) => setServiceForm((prev) => ({ ...prev, duration: e.target.value }))}
+                  placeholder="30"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="service-category">Category</Label>
+              <Input
+                id="service-category"
+                value={serviceForm.category}
+                onChange={(e) => setServiceForm((prev) => ({ ...prev, category: e.target.value }))}
+                placeholder="e.g. Blood Tests, Imaging"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setServiceDialogOpen(false)} disabled={serviceSaving}>
+              Cancel
+            </Button>
+            <Button onClick={saveService} disabled={serviceSaving}>
+              {serviceSaving ? 'Saving...' : serviceDialogMode === 'create' ? 'Create' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Admin: Delete service confirmation */}
+      <AlertDialog open={!!deleteServiceId} onOpenChange={(open) => !open && setDeleteServiceId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete service</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove this service. Existing appointments for this service will still exist but the service will no longer be available for new bookings. Are you sure?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingService}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteServiceId && confirmDeleteService(deleteServiceId)}
+              disabled={deletingService}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deletingService ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

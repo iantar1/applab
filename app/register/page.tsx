@@ -35,8 +35,8 @@ export default function RegisterPage() {
         return
       }
 
-      // On success, redirect to login
-      router.push('/login')
+      // Auto-logged in; go to home
+      router.push('/home')
     } catch (err) {
       setError((err as Error).message)
       setLoading(false)

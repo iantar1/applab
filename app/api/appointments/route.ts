@@ -20,21 +20,29 @@ export async function GET(request: Request) {
     }
     const user = await prisma.user.findUnique({
       where: { id: payload.userId },
-      select: { id: true, email: true, phone: true },
+      select: { id: true, email: true, phone: true, isAdmin: true },
     });
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
+
+    const isAdmin = user.isAdmin === true;
+
     const appointments = await prisma.appointment.findMany({
-      where: {
-        OR: [
-          { userId: user.id },
-          ...(user.email ? [{ guestEmail: user.email }] : []),
-          ...(user.phone ? [{ guestPhone: user.phone }] : []),
-        ],
-      },
+      where: isAdmin
+        ? undefined
+        : {
+            OR: [
+              { userId: user.id },
+              ...(user.email ? [{ guestEmail: user.email }] : []),
+              ...(user.phone ? [{ guestPhone: user.phone }] : []),
+            ],
+          },
       orderBy: { appointmentDate: 'desc' },
-      include: { service: true },
+      include: {
+        service: true,
+        ...(isAdmin ? { user: { select: { id: true, fullName: true, email: true, phone: true } } } : {}),
+      },
     });
     return NextResponse.json({ appointments });
   } catch (error) {
@@ -65,7 +73,7 @@ export async function POST(request: Request) {
     }
     const currentUser = await prisma.user.findUnique({
       where: { id: payload.userId },
-      select: { id: true },
+      select: { id: true, isAdmin: true, email: true, phone: true },
     });
     if (!currentUser) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
@@ -81,6 +89,7 @@ export async function POST(request: Request) {
     const name = body.name != null ? String(body.name).trim() : null;
     const email = body.email != null ? String(body.email).trim() : null;
     const phone = body.phone != null ? String(body.phone).trim() : null;
+    const cin = body.cin != null ? String(body.cin).trim() : null;
     const notes = body.notes != null ? String(body.notes).trim() : null;
 
     if (!appointmentDateRaw || !appointmentTimeRaw || priceRaw == null) {
@@ -129,6 +138,32 @@ export async function POST(request: Request) {
       );
     }
 
+    const isAdmin = currentUser.isAdmin === true;
+    if (isAdmin) {
+      if (!name || !email || !phone) {
+        return NextResponse.json(
+          { error: 'When booking for someone else, full name, email, and phone are required.' },
+          { status: 400 }
+        );
+      }
+      const adminEmail = (currentUser.email ?? '').toLowerCase().trim();
+      const adminPhone = (currentUser.phone ?? '').trim();
+      const guestEmailLower = email.toLowerCase().trim();
+      const guestPhoneNorm = phone.trim();
+      if (adminEmail && guestEmailLower === adminEmail) {
+        return NextResponse.json(
+          { error: 'You cannot create an appointment for yourself. Use the guest\'s email.' },
+          { status: 400 }
+        );
+      }
+      if (adminPhone && guestPhoneNorm === adminPhone) {
+        return NextResponse.json(
+          { error: 'You cannot create an appointment for yourself. Use the guest\'s phone.' },
+          { status: 400 }
+        );
+      }
+    }
+
     const appointment = await prisma.appointment.create({
       data: {
         userId: currentUser.id,
@@ -140,6 +175,7 @@ export async function POST(request: Request) {
         guestName: name || null,
         guestEmail: email || null,
         guestPhone: phone || null,
+        guestCin: cin || null,
         notes: notes || null,
       },
       include: {

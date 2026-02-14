@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
+import { signJwt } from '@/lib/auth';
 
 export async function POST(request: Request) {
   try {
@@ -29,6 +30,8 @@ export async function POST(request: Request) {
     const salt = await bcrypt.genSalt(10);
     const hashed = await bcrypt.hash(password, salt);
 
+    const isAdmin = String(email).toLowerCase().endsWith('@um6p.ma');
+
     const user = await prisma.user.create({
       data: {
         fullName,
@@ -36,6 +39,7 @@ export async function POST(request: Request) {
         phone,
         cin,
         password: hashed,
+        isAdmin,
       },
       select: {
         id: true,
@@ -47,7 +51,21 @@ export async function POST(request: Request) {
       },
     });
 
-    return NextResponse.json({ user }, { status: 201 });
+    // Auto-login: set session cookie same as login
+    const token = signJwt({ userId: user.id });
+    const maxAge = 7 * 24 * 60 * 60; // 7 days in seconds
+    const secure = process.env.NODE_ENV === 'production';
+
+    const res = NextResponse.json(
+      { user: { id: user.id, fullName: user.fullName, phone: user.phone } },
+      { status: 201 }
+    );
+    res.headers.set(
+      'Set-Cookie',
+      `token=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure ? '; Secure' : ''}`
+    );
+
+    return res;
   } catch (error) {
     console.error('Registration error:', error);
     const err = error as any;

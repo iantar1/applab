@@ -30,6 +30,7 @@ model Service {
   description String?
   price       Float
   category    String
+  duration    Int      @default(30) // minutes
   createdAt   DateTime @default(now())
 
   appointments Appointment[]
@@ -47,10 +48,11 @@ model Appointment {
   stripeSessionId   String?
   pdfPath           String?
   notes             String?  // additional notes from booking form
-  // Guest info when userId is null
+  // Guest / beneficiary info (when userId is set: admin booking for someone else)
   guestName         String?
   guestEmail        String?
   guestPhone        String?
+  guestCin          String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -68,8 +70,9 @@ model Appointment {
 model Insurance {
   id                String        @id @default(cuid())
   userId            String
-  insuranceNumber   String
   insuranceCompany  String
+  membershipNumber  String
+  contractNumber    String
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 

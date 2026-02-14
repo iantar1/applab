@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { History, Shield, Calendar, Settings, LogOut, User, Clock, CalendarDays, Pencil, Plus, Trash2 } from 'lucide-react';
+import { History, Shield, Calendar, Settings, LogOut, User, Clock, CalendarDays, Pencil, Plus, Trash2, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -46,7 +46,7 @@ const INSURANCE_COMPANIES = [
   'La Marocaine Vie',
 ];
 
-type NavItem = 'history' | 'insurance' | 'appointments' | 'settings';
+type NavItem = 'history' | 'insurance' | 'appointments' | 'messages' | 'settings';
 
 interface UserData {
   id: string;
@@ -86,12 +86,17 @@ interface InsuranceData {
   contractNumber: string;
 }
 
-const navItems: { id: NavItem; label: string; icon: React.ReactNode }[] = [
+const baseNavItems: { id: NavItem; label: string; icon: React.ReactNode }[] = [
   { id: 'history', label: 'History', icon: <History className="h-5 w-5" /> },
   { id: 'insurance', label: 'Insurance', icon: <Shield className="h-5 w-5" /> },
   { id: 'appointments', label: 'Appointments', icon: <Calendar className="h-5 w-5" /> },
+  { id: 'messages', label: 'Messages', icon: <MessageCircle className="h-5 w-5" /> },
   { id: 'settings', label: 'Settings', icon: <Settings className="h-5 w-5" /> },
 ];
+function getNavItems(isAdmin: boolean): { id: NavItem; label: string; icon: React.ReactNode }[] {
+  if (!isAdmin) return baseNavItems.filter((item) => item.id !== 'messages');
+  return baseNavItems;
+}
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<NavItem>('history');
@@ -136,6 +141,16 @@ export default function HomePage() {
   const [serviceError, setServiceError] = useState<string | null>(null);
   const [deleteServiceId, setDeleteServiceId] = useState<string | null>(null);
   const [deletingService, setDeletingService] = useState(false);
+  // Admin: Messages (WhatsApp)
+  const [messages, setMessages] = useState<{ id: string; fromPhone: string; toPhone: string; body: string; sender: string | null; direction: string; createdAt: string }[]>([]);
+  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [whatsappReady, setWhatsappReady] = useState(false);
+  const [whatsappQr, setWhatsappQr] = useState<string | null>(null);
+  const [sendForm, setSendForm] = useState({ toPhone: '', body: '' });
+  const [sendLoading, setSendLoading] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [appSettingsWhatsappPhone, setAppSettingsWhatsappPhone] = useState('');
+  const [appSettingsSaving, setAppSettingsSaving] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -324,6 +339,73 @@ export default function HomePage() {
   }, [activeTab, router]);
 
   useEffect(() => {
+    if (activeTab !== 'messages' || !user?.isAdmin) return;
+    let cancelled = false;
+    setMessagesLoading(true);
+    const fetchMessagesAndStatus = async () => {
+      try {
+        const [messagesRes, statusRes, qrRes] = await Promise.all([
+          fetch('/api/messages'),
+          fetch('/api/whatsapp/status'),
+          fetch('/api/whatsapp/qr'),
+        ]);
+        if (!cancelled && messagesRes.ok) {
+          const data = await messagesRes.json();
+          setMessages(data.messages || []);
+        }
+        if (!cancelled && statusRes.ok) {
+          const statusData = await statusRes.json();
+          setWhatsappReady(statusData.ready === true);
+        }
+        if (!cancelled && qrRes.ok) {
+          const qrData = await qrRes.json();
+          setWhatsappQr(qrData.qr || null);
+        }
+      } catch (error) {
+        console.error('Error fetching messages/status:', error);
+      } finally {
+        if (!cancelled) setMessagesLoading(false);
+      }
+    };
+    fetchMessagesAndStatus();
+    // Poll status every 2s while on Messages tab so Send button enables after QR scan
+    const poll = setInterval(() => {
+      if (cancelled) return;
+      fetch('/api/whatsapp/status')
+        .then((r) => r.json())
+        .then((data) => {
+          if (!cancelled && data.ready === true) {
+            setWhatsappReady(true);
+            setWhatsappQr(null);
+          }
+        })
+        .catch(() => {});
+    }, 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(poll);
+    };
+  }, [activeTab, user?.isAdmin]);
+
+  useEffect(() => {
+    if (activeTab !== 'settings' || !user?.isAdmin) return;
+    let cancelled = false;
+    const fetchAppSettings = async () => {
+      try {
+        const res = await fetch('/api/app-settings');
+        if (!cancelled && res.ok) {
+          const data = await res.json();
+          setAppSettingsWhatsappPhone(data.whatsappPhone ?? '');
+        }
+      } catch (error) {
+        console.error('Error fetching app settings:', error);
+      }
+    };
+    fetchAppSettings();
+    return () => { cancelled = true; };
+  }, [activeTab, user?.isAdmin]);
+
+  useEffect(() => {
     if (activeTab !== 'insurance') return;
     let cancelled = false;
     setInsuranceLoading(true);
@@ -432,6 +514,57 @@ export default function HomePage() {
       setSettingsError('Failed to update profile');
     } finally {
       setSettingsSaving(false);
+    }
+  };
+
+  const handleSendMessage = async () => {
+    setSendError(null);
+    if (!sendForm.toPhone.trim() || !sendForm.body.trim()) {
+      setSendError('Phone number and message are required.');
+      return;
+    }
+    setSendLoading(true);
+    try {
+      const res = await fetch('/api/messages/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ toPhone: sendForm.toPhone.trim(), body: sendForm.body.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSendError(data.error ?? 'Failed to send message');
+        return;
+      }
+      setSendForm((prev) => ({ ...prev, body: '' }));
+      const messagesRes = await fetch('/api/messages');
+      if (messagesRes.ok) {
+        const list = await messagesRes.json();
+        setMessages(list.messages || []);
+      }
+    } catch (error) {
+      setSendError('Failed to send message');
+    } finally {
+      setSendLoading(false);
+    }
+  };
+
+  const handleSaveAppSettings = async () => {
+    setAppSettingsSaving(true);
+    try {
+      const res = await fetch('/api/app-settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ whatsappPhone: appSettingsWhatsappPhone.trim() }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        console.error(data.error ?? 'Failed to save app settings');
+        return;
+      }
+    } catch (error) {
+      console.error('Error saving app settings:', error);
+    } finally {
+      setAppSettingsSaving(false);
     }
   };
 
@@ -601,6 +734,109 @@ export default function HomePage() {
             )}
           </div>
         );
+      case 'messages':
+        return (
+          <div className="w-full">
+            <div className="mb-8">
+              <h2 className="text-3xl font-bold text-gray-800">Messages</h2>
+              <p className="text-gray-500 mt-2">Send and receive WhatsApp messages with clients</p>
+            </div>
+            {messagesLoading ? (
+              <div className="text-center py-12">
+                <p className="text-gray-500">Loading...</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Connection</CardTitle>
+                    <CardDescription>
+                      {whatsappReady
+                        ? 'WhatsApp is connected. You can send and receive messages.'
+                        : 'Scan the QR code with WhatsApp on your phone to connect.'}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {!whatsappReady && whatsappQr && (
+                      <div className="flex justify-center p-4 bg-white rounded-lg">
+                        <img src={whatsappQr} alt="WhatsApp QR code" className="w-64 h-64" />
+                      </div>
+                    )}
+                    {!whatsappReady && !whatsappQr && (
+                      <p className="text-sm text-muted-foreground">Start the WhatsApp bridge (pnpm run whatsapp) and refresh. QR will appear here.</p>
+                    )}
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Send message</CardTitle>
+                    <CardDescription>Enter client phone number (with country code) and message.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {sendError && (
+                      <div className="rounded-md bg-destructive/10 text-destructive text-sm px-3 py-2">
+                        {sendError}
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      <Label htmlFor="msg-toPhone">Phone number</Label>
+                      <Input
+                        id="msg-toPhone"
+                        type="tel"
+                        value={sendForm.toPhone}
+                        onChange={(e) => setSendForm((prev) => ({ ...prev, toPhone: e.target.value }))}
+                        placeholder="e.g. 212612345678"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="msg-body">Message</Label>
+                      <Textarea
+                        id="msg-body"
+                        value={sendForm.body}
+                        onChange={(e) => setSendForm((prev) => ({ ...prev, body: e.target.value }))}
+                        placeholder="Your message..."
+                        rows={3}
+                      />
+                    </div>
+                    <Button onClick={handleSendMessage} disabled={sendLoading || !whatsappReady}>
+                      {sendLoading ? 'Sending...' : 'Send'}
+                    </Button>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Message history</CardTitle>
+                    <CardDescription>Recent WhatsApp messages</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {messages.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No messages yet.</p>
+                    ) : (
+                      <div className="space-y-3 max-h-96 overflow-y-auto">
+                        {messages.map((msg) => (
+                          <div
+                            key={msg.id}
+                            className={`p-3 rounded-lg text-sm ${
+                              msg.direction === 'outbound'
+                                ? 'bg-primary/10 ml-8'
+                                : 'bg-muted mr-8'
+                            }`}
+                          >
+                            <p className="font-medium text-muted-foreground">
+                              {msg.direction === 'outbound' ? 'You' : msg.fromPhone}
+                              {msg.sender ? ` (${msg.sender})` : ''} · {new Date(msg.createdAt).toLocaleString()}
+                            </p>
+                            <p className="mt-1">{msg.body}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </div>
+        );
       case 'settings':
         return (
           <div className="w-full">
@@ -709,6 +945,29 @@ export default function HomePage() {
                 </Button>
               </CardFooter>
             </Card>
+            {user?.isAdmin && (
+              <Card className="max-w-lg mt-6">
+                <CardHeader>
+                  <CardTitle>App settings</CardTitle>
+                  <CardDescription>WhatsApp sender number (admin only). Used for the Messages section.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="app-settings-whatsapp">WhatsApp sender number</Label>
+                    <Input
+                      id="app-settings-whatsapp"
+                      type="tel"
+                      value={appSettingsWhatsappPhone}
+                      onChange={(e) => setAppSettingsWhatsappPhone(e.target.value)}
+                      placeholder="e.g. +212612345678"
+                    />
+                  </div>
+                  <Button onClick={handleSaveAppSettings} disabled={appSettingsSaving}>
+                    {appSettingsSaving ? 'Saving...' : 'Save'}
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
           </div>
         );
       case 'insurance':
@@ -868,7 +1127,7 @@ export default function HomePage() {
 
         <nav className="min-h-0 flex-1 overflow-y-auto p-4">
           <ul className="space-y-2">
-            {navItems.map((item) => (
+            {getNavItems(user?.isAdmin ?? false).map((item) => (
               <li key={item.id}>
                 <button
                   onClick={() => setActiveTab(item.id)}

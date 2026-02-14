@@ -81,3 +81,23 @@ model Insurance {
 
   @@index([userId])
 }
+
+model AppSetting {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  fromPhone String
+  toPhone   String
+  body      String
+  sender    String?  // user name that sent the message
+  direction String   // inbound | outbound
+  createdAt DateTime @default(now())
+
+  @@index([fromPhone])
+  @@index([toPhone])
+  @@index([createdAt])
+}

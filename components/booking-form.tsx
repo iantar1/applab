@@ -15,48 +15,22 @@ interface BookingFormProps {
   price: number;
 }
 
-// Available dates (alternating: one day on, one day off starting from Feb 15, 2026)
-const getAvailableDates = (): Date[] => {
-  const available: Date[] = [];
-  // Feb 15, 17, 19, 21, 23, 25, 27 (alternating pattern)
-  const febDays = [15, 17, 19, 21, 23, 25, 27];
-  febDays.forEach(day => {
-    available.push(new Date(2026, 1, day));
-  });
-  // March dates too
-  const marchDays = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31];
-  marchDays.forEach(day => {
-    available.push(new Date(2026, 2, day));
-  });
-  return available;
-};
+type TakenSlot = { date: string; time: string };
 
-const availableDatesArray = getAvailableDates();
-
-// Check if a date is available
-const isDateAvailable = (date: Date): boolean => {
-  return availableDatesArray.some(
-    availableDate => 
-      availableDate.getFullYear() === date.getFullYear() &&
-      availableDate.getMonth() === date.getMonth() &&
-      availableDate.getDate() === date.getDate()
-  );
-};
-
-// Available time slots (alternating: one on, one off)
-const allTimeSlots = [
-  { value: '09:00', label: '9:00 AM', available: true },
-  { value: '09:30', label: '9:30 AM', available: false },
-  { value: '10:00', label: '10:00 AM', available: true },
-  { value: '10:30', label: '10:30 AM', available: false },
-  { value: '11:00', label: '11:00 AM', available: true },
-  { value: '11:30', label: '11:30 AM', available: false },
-  { value: '14:00', label: '2:00 PM', available: true },
-  { value: '14:30', label: '2:30 PM', available: false },
-  { value: '15:00', label: '3:00 PM', available: true },
-  { value: '15:30', label: '3:30 PM', available: false },
-  { value: '16:00', label: '4:00 PM', available: true },
-  { value: '16:30', label: '4:30 PM', available: false },
+// All bookable time slots (availability is computed from appointments per selected date)
+const TIME_SLOTS = [
+  { value: '09:00', label: '9:00 AM' },
+  { value: '09:30', label: '9:30 AM' },
+  { value: '10:00', label: '10:00 AM' },
+  { value: '10:30', label: '10:30 AM' },
+  { value: '11:00', label: '11:00 AM' },
+  { value: '11:30', label: '11:30 AM' },
+  { value: '14:00', label: '2:00 PM' },
+  { value: '14:30', label: '2:30 PM' },
+  { value: '15:00', label: '3:00 PM' },
+  { value: '15:30', label: '3:30 PM' },
+  { value: '16:00', label: '4:00 PM' },
+  { value: '16:30', label: '4:30 PM' },
 ];
 
 export function BookingForm({ serviceId, serviceName, price }: BookingFormProps) {
@@ -67,6 +41,7 @@ export function BookingForm({ serviceId, serviceName, price }: BookingFormProps)
   const [showUnavailableAlert, setShowUnavailableAlert] = useState(false);
   const [showUnavailableTimeAlert, setShowUnavailableTimeAlert] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
+  const [takenSlots, setTakenSlots] = useState<TakenSlot[]>([]);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -77,6 +52,24 @@ export function BookingForm({ serviceId, serviceName, price }: BookingFormProps)
     notes: ''
   });
   const [isAdmin, setIsAdmin] = useState(false);
+
+  const isSlotTaken = (dateStr: string, timeStr: string) =>
+    takenSlots.some(s => s.date === dateStr && s.time === timeStr);
+
+  useEffect(() => {
+    const fetchSlots = async () => {
+      try {
+        const res = await fetch(`/api/appointments/slots?serviceId=${encodeURIComponent(String(serviceId))}`);
+        if (res.ok) {
+          const data = await res.json();
+          setTakenSlots(data.takenSlots ?? []);
+        }
+      } catch {
+        setTakenSlots([]);
+      }
+    };
+    fetchSlots();
+  }, [serviceId]);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -116,27 +109,24 @@ export function BookingForm({ serviceId, serviceName, price }: BookingFormProps)
 
   const handleDateSelect = (date: Date | undefined) => {
     if (!date) return;
-    
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     if (date < today) return;
-    
-    if (isDateAvailable(date)) {
-      setSelectedDate(date);
-      setFormData(prev => ({ 
-        ...prev, 
-        appointmentDate: date.toISOString().split('T')[0] 
-      }));
-      setShowUnavailableAlert(false);
-    } else {
-      setShowUnavailableAlert(true);
-      setTimeout(() => setShowUnavailableAlert(false), 3000);
-    }
+    setSelectedDate(date);
+    const dateStr = date.toISOString().split('T')[0];
+    setFormData(prev => {
+      const next = { ...prev, appointmentDate: dateStr };
+      if (prev.appointmentTime && isSlotTaken(dateStr, prev.appointmentTime)) {
+        next.appointmentTime = '';
+      }
+      return next;
+    });
+    setShowUnavailableAlert(false);
   };
 
-  const handleTimeSelect = (slot: { value: string; label: string; available: boolean }) => {
-    if (slot.available) {
-      setFormData(prev => ({ ...prev, appointmentTime: slot.value }));
+  const handleTimeSelect = (slotValue: string, available: boolean) => {
+    if (available) {
+      setFormData(prev => ({ ...prev, appointmentTime: slotValue }));
       setShowUnavailableTimeAlert(false);
     } else {
       setShowUnavailableTimeAlert(true);
@@ -180,21 +170,15 @@ export function BookingForm({ serviceId, serviceName, price }: BookingFormProps)
     }
   };
 
-  // Custom modifiers for calendar styling
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
   const modifiers = {
-    available: availableDatesArray,
-    unavailable: (date: Date) => {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      return date >= today && !isDateAvailable(date);
-    }
+    available: (date: Date) => date >= today,
   };
 
   const modifiersClassNames = {
     available:
       'text-green-600 font-bold hover:!bg-green-500 hover:!text-white focus:!bg-green-500 focus:!text-white',
-    unavailable:
-      'text-red-500 font-bold relative before:content-[""] before:absolute before:top-1/2 before:left-1/2 before:-translate-x-1/2 before:-translate-y-1/2 before:w-5 before:h-[2px] before:bg-red-500 before:rotate-45'
   };
 
   return (
@@ -346,34 +330,42 @@ export function BookingForm({ serviceId, serviceName, price }: BookingFormProps)
                 9:30
                 <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-[2px] bg-red-500 rotate-45"></span>
               </span>
-              <span className="ml-1">Unavailable</span>
+              <span className="ml-1">Already booked</span>
             </div>
+            {!formData.appointmentDate && (
+              <p className="text-sm text-muted-foreground">Select a date above to see available times.</p>
+            )}
             <div className="grid grid-cols-3 gap-2">
-              {allTimeSlots.map((slot) => (
-                <button
-                  key={slot.value}
-                  type="button"
-                  onClick={() => handleTimeSelect(slot)}
-                  className={`
-                    relative p-2 text-sm border rounded-md transition-all
-                    ${formData.appointmentTime === slot.value 
-                      ? 'bg-primary text-white border-primary' 
-                      : slot.available 
-                        ? 'text-green-600 font-bold hover:bg-green-50 border-green-200' 
-                        : 'text-red-500 font-bold hover:bg-red-50 border-red-200'
-                    }
-                  `}
-                >
-                  {slot.label}
-                  {!slot.available && formData.appointmentTime !== slot.value && (
-                    <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-[2px] bg-red-500 rotate-45"></span>
-                  )}
-                </button>
-              ))}
+              {TIME_SLOTS.map((slot) => {
+                const dateStr = formData.appointmentDate;
+                const available = !dateStr || !isSlotTaken(dateStr, slot.value);
+                return (
+                  <button
+                    key={slot.value}
+                    type="button"
+                    onClick={() => handleTimeSelect(slot.value, available)}
+                    disabled={!formData.appointmentDate}
+                    className={`
+                      relative p-2 text-sm border rounded-md transition-all disabled:opacity-60
+                      ${formData.appointmentTime === slot.value
+                        ? 'bg-primary text-white border-primary'
+                        : available
+                          ? 'text-green-600 font-bold hover:bg-green-50 border-green-200'
+                          : 'text-red-500 font-bold hover:bg-red-50 border-red-200 cursor-not-allowed'
+                      }
+                    `}
+                  >
+                    {slot.label}
+                    {!available && formData.appointmentTime !== slot.value && (
+                      <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-[2px] bg-red-500 rotate-45"></span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
             {formData.appointmentTime && (
               <p className="text-sm text-green-600 font-medium">
-                Selected: {allTimeSlots.find(s => s.value === formData.appointmentTime)?.label}
+                Selected: {TIME_SLOTS.find(s => s.value === formData.appointmentTime)?.label}
               </p>
             )}
           </div>

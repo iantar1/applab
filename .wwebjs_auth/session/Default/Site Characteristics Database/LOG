@@ -1,2 +1,3 @@
-2026/02/14-17:25:44.674 12cce Creating DB /home/iantar/applab/.wwebjs_auth/session/Default/Site Characteristics Database since it was missing.
-2026/02/14-17:25:44.676 12cce Reusing MANIFEST /home/iantar/applab/.wwebjs_auth/session/Default/Site Characteristics Database/MANIFEST-000001
+2026/02/14-19:03:41.306 317d2 Reusing MANIFEST /home/omar/Desktop/applab/.wwebjs_auth/session/Default/Site Characteristics Database/MANIFEST-000001
+2026/02/14-19:03:41.306 317d2 Recovering log #3
+2026/02/14-19:03:41.307 317d2 Reusing old log /home/omar/Desktop/applab/.wwebjs_auth/session/Default/Site Characteristics Database/000003.log 

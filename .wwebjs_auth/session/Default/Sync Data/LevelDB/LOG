@@ -1,2 +1,3 @@
-2026/02/14-17:25:44.654 12cb8 Creating DB /home/iantar/applab/.wwebjs_auth/session/Default/Sync Data/LevelDB since it was missing.
-2026/02/14-17:25:44.672 12cb8 Reusing MANIFEST /home/iantar/applab/.wwebjs_auth/session/Default/Sync Data/LevelDB/MANIFEST-000001
+2026/02/14-19:03:41.287 317d1 Reusing MANIFEST /home/omar/Desktop/applab/.wwebjs_auth/session/Default/Sync Data/LevelDB/MANIFEST-000001
+2026/02/14-19:03:41.304 317d1 Recovering log #3
+2026/02/14-19:03:41.304 317d1 Reusing old log /home/omar/Desktop/applab/.wwebjs_auth/session/Default/Sync Data/LevelDB/000003.log 

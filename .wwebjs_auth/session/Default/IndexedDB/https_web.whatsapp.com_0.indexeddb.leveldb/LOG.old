@@ -1,0 +1,43 @@
+2026/02/14-18:44:43.615 285d2 Reusing MANIFEST /home/omar/Desktop/applab/.wwebjs_auth/session/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/02/14-18:44:43.616 285d2 Recovering log #363
+2026/02/14-18:44:43.632 285d2 Reusing old log /home/omar/Desktop/applab/.wwebjs_auth/session/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/000363.log 
+2026/02/14-18:44:45.692 285d3 Level-0 table #373: started
+2026/02/14-18:44:45.723 285d3 Level-0 table #373: 621536 bytes OK
+2026/02/14-18:44:45.760 285d3 Delete type=0 #363
+2026/02/14-18:44:45.760 285d1 Manual compaction at level-0 from '\x00W\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00X\x00\x00\x00' @ 0 : 0; will stop at (end)
+2026/02/14-18:44:45.790 285d2 Compacting 1@1 + 6@2 files
+2026/02/14-18:44:45.960 285d2 Generated table #374@1: 51817 keys, 2215539 bytes
+2026/02/14-18:44:46.007 285d2 Generated table #375@1: 4490 keys, 2158824 bytes
+2026/02/14-18:44:46.077 285d2 Generated table #376@1: 15710 keys, 2214843 bytes
+2026/02/14-18:44:46.289 285d2 Generated table #377@1: 29121 keys, 2256542 bytes
+2026/02/14-18:44:46.348 285d2 Generated table #378@1: 70346 keys, 2212305 bytes
+2026/02/14-18:44:46.382 285d2 Generated table #379@1: 15726 keys, 364748 bytes
+2026/02/14-18:44:46.382 285d2 Compacted 1@1 + 6@2 files => 11422801 bytes
+2026/02/14-18:44:46.449 285d2 compacted to: files[ 0 0 6 0 0 0 0 ]
+2026/02/14-18:44:46.449 285d2 Delete type=2 #366
+2026/02/14-18:44:46.449 285d2 Delete type=2 #370
+2026/02/14-18:44:46.449 285d2 Delete type=2 #368
+2026/02/14-18:44:46.449 285d2 Delete type=2 #369
+2026/02/14-18:44:46.449 285d2 Delete type=2 #367
+2026/02/14-18:44:46.449 285d2 Delete type=2 #373
+2026/02/14-18:44:46.449 285d2 Delete type=2 #365
+2026/02/14-18:49:48.851 285d2 Level-0 table #381: started
+2026/02/14-18:49:48.874 285d2 Level-0 table #381: 333648 bytes OK
+2026/02/14-18:49:48.902 285d2 Delete type=0 #372
+2026/02/14-18:49:48.902 285d2 Manual compaction at level-0 from '\x00X\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00Y\x00\x00\x00' @ 0 : 0; will stop at (end)
+2026/02/14-18:49:53.051 285d3 Compacting 1@1 + 6@2 files
+2026/02/14-18:49:53.245 285d3 Generated table #382@1: 52882 keys, 2216649 bytes
+2026/02/14-18:49:53.287 285d3 Generated table #383@1: 4701 keys, 2159464 bytes
+2026/02/14-18:49:53.340 285d3 Generated table #384@1: 15580 keys, 2214555 bytes
+2026/02/14-18:49:53.427 285d3 Generated table #385@1: 29243 keys, 2254716 bytes
+2026/02/14-18:49:53.476 285d3 Generated table #386@1: 69745 keys, 2210721 bytes
+2026/02/14-18:49:53.502 285d3 Generated table #387@1: 16347 keys, 379324 bytes
+2026/02/14-18:49:53.502 285d3 Compacted 1@1 + 6@2 files => 11435429 bytes
+2026/02/14-18:49:53.530 285d3 compacted to: files[ 0 0 6 0 0 0 0 ]
+2026/02/14-18:49:53.530 285d3 Delete type=2 #374
+2026/02/14-18:49:53.530 285d3 Delete type=2 #377
+2026/02/14-18:49:53.530 285d3 Delete type=2 #375
+2026/02/14-18:49:53.530 285d3 Delete type=2 #378
+2026/02/14-18:49:53.530 285d3 Delete type=2 #379
+2026/02/14-18:49:53.530 285d3 Delete type=2 #381
+2026/02/14-18:49:53.530 285d3 Delete type=2 #376

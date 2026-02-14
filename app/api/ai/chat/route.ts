@@ -2,23 +2,33 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyJwt } from "@/lib/auth";
 
-const SYSTEM_PROMPT = `You are a helpful medical AI assistant for AppLab, a healthcare appointment booking platform. 
-Your role is to:
-- Answer general medical questions and provide health information
-- Help users understand medical tests and procedures (blood tests, imaging, etc.)
-- Explain common symptoms and when to see a doctor
-- Provide general wellness and prevention advice
-- Help users understand their lab results in general terms
-- Suggest which medical service they might need to book
-- Tell users about their upcoming appointments when they ask
+const SYSTEM_PROMPT = `You are AppointLab AI, a helpful general-purpose assistant for AppointLab, a healthcare appointment booking platform.
 
-IMPORTANT RULES:
-- Always remind users that you are an AI and NOT a replacement for professional medical advice
-- Never diagnose conditions - suggest they book an appointment with a professional
-- For emergencies, always tell users to call emergency services immediately
+YOUR IDENTITY:
+- Your name is "AppointLab AI"
+- When users greet you (hello, hi, bonjour, salut, مرحبا, etc.), always introduce yourself as "AppointLab AI"
+- Example greeting response: "Hello! I'm AppointLab AI, your helpful assistant. How can I assist you today?"
+
+You can help with:
+- Medical and health questions (your specialty!)
+- Symptoms, diseases, and conditions
+- Medical tests and lab procedures (blood tests, imaging, X-rays, etc.)
+- Medications and their side effects
+- Wellness, nutrition, fitness, and prevention
+- Mental health and well-being
+- Understanding lab results
+- Booking medical appointments on AppointLab
+- User's upcoming appointments
+- General questions about any topic
+- Information, advice, and assistance with various subjects
+
+RULES:
+- ALWAYS respond in ENGLISH, regardless of what language the user writes in
+- Be helpful, friendly, and informative
+- When discussing medical topics, always remind users that you are an AI and NOT a replacement for professional medical advice
+- Never diagnose medical conditions - suggest they book an appointment with a professional
+- For medical emergencies, always tell users to call emergency services immediately
 - Be compassionate, clear, and concise
-- If asked about something non-medical, politely redirect to medical topics
-- Answer in the same language the user writes in (French, Arabic, English, etc.)
 - Keep responses concise (under 200 words when possible)
 - When sharing appointment info, be friendly and helpful`;
 
@@ -164,38 +174,49 @@ export async function POST(req: NextRequest) {
     }
     messages.push({ role: "user", content: currentMessage });
 
-    // Try OpenRouter API first
+    // Try OpenRouter API first with multiple free models
     if (openrouterKey) {
-      try {
-        console.log("Calling OpenRouter API...");
-        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${openrouterKey}`,
-            "Content-Type": "application/json",
-            "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
-            "X-Title": "AppLab Medical Assistant"
-          },
-          body: JSON.stringify({
-            model: "liquid/lfm-2.5-1.2b-instruct:free",
-            messages,
-            max_tokens: 512,
-            temperature: 0.7,
-          }),
-        });
+      const freeModels = [
+        "google/gemini-2.0-flash-exp:free",
+        "meta-llama/llama-3.2-3b-instruct:free",
+        "qwen/qwen-2.5-72b-instruct:free",
+        "liquid/lfm-2.5-1.2b-instruct:free",
+      ];
+      
+      for (const model of freeModels) {
+        try {
+          console.log(`Trying OpenRouter model: ${model}...`);
+          const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${openrouterKey}`,
+              "Content-Type": "application/json",
+              "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+              "X-Title": "AppLab Medical Assistant"
+            },
+            body: JSON.stringify({
+              model,
+              messages,
+              max_tokens: 512,
+              temperature: 0.7,
+            }),
+          });
 
-        const data = await response.json();
-        console.log("OpenRouter response status:", response.status);
-        console.log("OpenRouter response data:", JSON.stringify(data).substring(0, 500));
+          const data = await response.json();
+          console.log("OpenRouter response status:", response.status);
+          console.log("OpenRouter response data:", JSON.stringify(data).substring(0, 500));
 
-        if (response.ok && data?.choices?.[0]?.message?.content) {
-          const reply = data.choices[0].message.content;
-          return NextResponse.json({ reply });
-        } else if (data?.error) {
-          console.error("OpenRouter API error:", data.error);
+          if (response.ok && data?.choices?.[0]?.message?.content) {
+            const reply = data.choices[0].message.content;
+            return NextResponse.json({ reply });
+          } else if (data?.error) {
+            console.error(`OpenRouter API error with ${model}:`, data.error);
+            // Continue to next model
+          }
+        } catch (e) {
+          console.error(`OpenRouter API exception with ${model}:`, e);
+          // Continue to next model
         }
-      } catch (e) {
-        console.error("OpenRouter API exception:", e);
       }
     } else {
       console.log("No OpenRouter API key found");

@@ -62,19 +62,22 @@ Please arrive 10 minutes early. You'll receive appointment reminders before your
 
 Thank you for choosing us!`;
 
-    const response = await fetch('/api/notifications/whatsapp', {
+    // Use WhatsApp Bridge directly (running on port 3001)
+    const BRIDGE_URL = process.env.WHATSAPP_BRIDGE_URL || 'http://localhost:3001';
+    
+    const response = await fetch(`${BRIDGE_URL}/send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        bookingId: payload.bookingId,
-        phone: payload.phone,
-        message,
-        type: 'confirmation',
+        to: payload.phone,
+        body: message,
+        sender: 'AppointLab',
       }),
     });
 
     if (!response.ok) {
-      throw new Error('Failed to send WhatsApp message');
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || 'Failed to send WhatsApp message');
     }
 
     return await response.json();
@@ -89,21 +92,33 @@ Thank you for choosing us!`;
  */
 export async function sendReminderWhatsApp(payload: NotificationPayload) {
   try {
-    const params = new URLSearchParams({
-      action: 'send-reminder',
-      bookingId: payload.bookingId.toString(),
-      phone: payload.phone,
-      appointmentDate: payload.appointmentDate,
-      appointmentTime: payload.appointmentTime,
-      serviceName: payload.serviceName,
-    });
+    const message = `⏰ Reminder: Your appointment is coming up!
 
-    const response = await fetch(`/api/notifications/whatsapp?${params}`, {
-      method: 'GET',
+📋 Service: ${payload.serviceName}
+📅 Date: ${payload.appointmentDate}
+🕐 Time: ${payload.appointmentTime}
+🆔 Booking ID: #${payload.bookingId}
+
+Please arrive 10 minutes early. Contact us if you need to reschedule.
+
+See you soon! 👋`;
+
+    // Use WhatsApp Bridge directly (running on port 3001)
+    const BRIDGE_URL = process.env.WHATSAPP_BRIDGE_URL || 'http://localhost:3001';
+    
+    const response = await fetch(`${BRIDGE_URL}/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: payload.phone,
+        body: message,
+        sender: 'AppointLab',
+      }),
     });
 
     if (!response.ok) {
-      throw new Error('Failed to send reminder');
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || 'Failed to send reminder');
     }
 
     return await response.json();

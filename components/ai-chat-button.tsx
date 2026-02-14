@@ -12,10 +12,15 @@ interface ISpeechRecognition extends EventTarget {
   lang: string;
   onresult: ((ev: SpeechRecognitionEvent) => void) | null;
   onend: (() => void) | null;
-  onerror: ((ev: Event) => void) | null;
+  onerror: ((ev: SpeechRecognitionErrorEvent) => void) | null;
   start(): void;
   stop(): void;
   abort(): void;
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+  message: string;
 }
 
 interface ChatMessage {
@@ -123,6 +128,7 @@ export function AiChatButton() {
   const recognitionRef = useRef<ISpeechRecognition | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isMuted, setIsMuted] = useState(false);
+  const [voiceInput, setVoiceInput] = useState('');
 
   /* focus input in text mode */
   useEffect(() => {
@@ -265,26 +271,31 @@ export function AiChatButton() {
       }
     };
 
-    r.onerror = (event: Event & { error?: string }) => {
+    r.onerror = (event: SpeechRecognitionErrorEvent) => {
       const errorType = event.error || 'unknown';
-      console.error('Speech recognition error:', errorType, event);
+      console.error('Speech recognition error:', errorType, event.message);
       
-      let errorMsg = 'Microphone error. Please try again.';
+      // no-speech is common — just silently reset so user can try again
+      if (errorType === 'no-speech' || errorType === 'aborted') {
+        setTranscript('');
+        setVoiceState('idle');
+        return;
+      }
+      
+      let errorMsg = '';
       if (errorType === 'not-allowed') {
-        errorMsg = 'Microphone access denied. Please allow microphone in browser settings.';
-      } else if (errorType === 'no-speech') {
-        errorMsg = 'No speech detected. Please speak louder or check your microphone.';
+        errorMsg = 'Microphone access denied. Please allow microphone in your browser settings (click the lock icon in the address bar).';
       } else if (errorType === 'network') {
-        errorMsg = 'Network error. Speech recognition requires internet connection.';
-      } else if (errorType === 'aborted') {
-        errorMsg = ''; // User cancelled, no need to show error
+        errorMsg = 'Network error. Speech recognition requires an internet connection.';
       } else if (errorType === 'audio-capture') {
-        errorMsg = 'No microphone found. Please connect a microphone.';
+        errorMsg = 'No microphone found. Please connect a microphone and try again.';
+      } else if (errorType === 'service-not-allowed') {
+        errorMsg = 'Speech recognition service is not available. Please use Chrome or Edge browser.';
+      } else {
+        errorMsg = 'Voice input error. Try clicking the mic button again, or switch to text mode.';
       }
       
-      if (errorMsg) {
-        setAiReply(errorMsg);
-      }
+      setAiReply(errorMsg);
       setVoiceState('idle');
     };
 
@@ -300,6 +311,47 @@ export function AiChatButton() {
   const stopListening = () => {
     try { recognitionRef.current?.stop(); } catch {}
   };
+
+  /* ── voice mode: send typed text (fallback when mic doesn't work) ── */
+  const sendVoiceText = useCallback(async (text: string) => {
+    if (!text.trim() || voiceState === 'processing' || voiceState === 'speaking') return;
+    setVoiceInput('');
+    setTranscript(text.trim());
+    setVoiceState('processing');
+    setAiReply('');
+
+    try {
+      const res = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text.trim(), history: voiceHistory.slice(-10) }),
+      });
+      const data = await res.json();
+      const reply = data.reply || "Sorry, I couldn't respond.";
+      
+      setAiReply(reply);
+      setVoiceHistory((prev) => [...prev, { role: 'user', content: text.trim() }, { role: 'assistant', content: reply }]);
+      
+      // Speak the response using browser TTS
+      if (!isMuted && typeof window !== 'undefined' && window.speechSynthesis) {
+        setVoiceState('speaking');
+        window.speechSynthesis.cancel();
+        const clean = reply.replace(/\*\*/g, '').replace(/[•]/g, ',');
+        const utter = new SpeechSynthesisUtterance(clean);
+        utter.rate = 1.0;
+        utter.pitch = 1.0;
+        utter.lang = 'en-US';
+        utter.onend = () => setVoiceState('idle');
+        utter.onerror = () => setVoiceState('idle');
+        window.speechSynthesis.speak(utter);
+      } else {
+        setVoiceState('idle');
+      }
+    } catch {
+      setAiReply('Sorry, something went wrong.');
+      setVoiceState('idle');
+    }
+  }, [voiceHistory, voiceState, isMuted]);
 
   /* ── shared helpers ── */
   const resetChat = () => {
@@ -493,6 +545,28 @@ export function AiChatButton() {
                       <p className="text-sm text-gray-700 text-left">{renderText(aiReply)}</p>
                     </div>
                   )}
+                </div>
+              </div>
+
+              {/* Text input fallback for when mic doesn't work */}
+              <div className="w-full px-1">
+                <div className="flex items-center gap-2 bg-gray-50 rounded-xl border border-gray-200 px-3 py-1.5">
+                  <input
+                    type="text"
+                    placeholder="Or type here..."
+                    value={voiceInput}
+                    onChange={(e) => setVoiceInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') sendVoiceText(voiceInput); }}
+                    disabled={voiceState === 'processing' || voiceState === 'speaking'}
+                    className="flex-1 bg-transparent text-sm text-gray-700 outline-none placeholder-gray-400"
+                  />
+                  <button
+                    onClick={() => sendVoiceText(voiceInput)}
+                    disabled={!voiceInput.trim() || voiceState === 'processing' || voiceState === 'speaking'}
+                    className="p-1.5 rounded-lg bg-[hsl(142,62%,38%)] text-white disabled:opacity-40 hover:bg-[hsl(142,62%,32%)] transition-colors"
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               </div>
 

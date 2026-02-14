@@ -1,2 +1,3 @@
-2026/02/14-17:25:44.853 12ceb Creating DB /home/iantar/applab/.wwebjs_auth/session/Default/Session Storage since it was missing.
-2026/02/14-17:25:44.860 12ceb Reusing MANIFEST /home/iantar/applab/.wwebjs_auth/session/Default/Session Storage/MANIFEST-000001
+2026/02/14-19:03:43.260 31807 Reusing MANIFEST /home/omar/Desktop/applab/.wwebjs_auth/session/Default/Session Storage/MANIFEST-000001
+2026/02/14-19:03:43.261 31807 Recovering log #3
+2026/02/14-19:03:43.264 31807 Reusing old log /home/omar/Desktop/applab/.wwebjs_auth/session/Default/Session Storage/000003.log 

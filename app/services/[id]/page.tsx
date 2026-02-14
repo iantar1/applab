@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { BookingForm } from '@/components/booking-form';
 
 interface Service {
-  id: number;
+  id: string | number;
   name: string;
   description: string;
   fullDescription: string;
@@ -22,7 +22,7 @@ interface Service {
 
 export default function ServiceDetailPage() {
   const params = useParams();
-  const serviceId = parseInt(params.id as string);
+  const serviceId = params.id as string;
   
   const [service, setService] = useState<Service | null>(null);
   const [loading, setLoading] = useState(true);

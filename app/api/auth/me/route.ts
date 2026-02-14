@@ -13,7 +13,7 @@ export async function GET(request: Request) {
     const payload = verifyJwt<{ userId: string }>(token);
     if (!payload?.userId) return NextResponse.json({ user: null });
 
-    const user = await prisma.user.findUnique({ where: { id: payload.userId }, select: { id: true, fullName: true, phone: true, cin: true } });
+    const user = await prisma.user.findUnique({ where: { id: payload.userId }, select: { id: true, fullName: true, email: true, phone: true, cin: true } });
     return NextResponse.json({ user });
   } catch (error) {
     console.error('Me error:', error);

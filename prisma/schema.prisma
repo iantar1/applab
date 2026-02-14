@@ -9,26 +9,27 @@ datasource db {
   provider = "mysql"
   url      = env("DATABASE_URL")
 }
-
 model User {
-  id        String     @id @default(cuid())
-  phone     String     @unique
-  email     String     @unique
+  id        String       @id @default(cuid())
+  phone     String       @unique
+  email     String       @unique
   password  String
   fullName  String
-  cin       String     @unique
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  cin       String       @unique
+  isAdmin   Boolean      @default(false)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
 
   appointments Appointment[]
+  insurances   Insurance[]
 }
 
 model Service {
   id          String   @id @default(cuid())
   name        String   @unique
   description String?
-  price       Float    // in MAD
-  category    String   // e.g., "Blood Tests", "Imaging", "Other"
+  price       Float
+  category    String
   createdAt   DateTime @default(now())
 
   appointments Appointment[]
@@ -36,23 +37,44 @@ model Service {
 
 model Appointment {
   id                String   @id @default(cuid())
-  userId            String
+  userId            String?  // optional for guest bookings
   serviceId         String
   appointmentDate   DateTime
+  appointmentTime   String   // e.g. "09:00"
   status            String   @default("pending") // pending, paid, completed
   totalPrice        Float
-  insuranceProvider String?
-  insuranceId       String?
+  insuranceId       String?  // optional
   stripeSessionId   String?
   pdfPath           String?
+  notes             String?  // additional notes from booking form
+  // Guest info when userId is null
+  guestName         String?
+  guestEmail        String?
+  guestPhone        String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  service Service @relation(fields: [serviceId], references: [id])
+  user      User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  service   Service   @relation(fields: [serviceId], references: [id])
+  insurance Insurance? @relation(fields: [insuranceId], references: [id])
 
   @@index([userId])
   @@index([serviceId])
   @@index([appointmentDate])
   @@index([status])
+  @@index([insuranceId])
+}
+
+model Insurance {
+  id                String        @id @default(cuid())
+  userId            String
+  insuranceNumber   String
+  insuranceCompany  String
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments Appointment[] // back-relation
+
+  @@index([userId])
 }

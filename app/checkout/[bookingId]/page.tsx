@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { loadStripe } from '@stripe/stripe-js';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -14,10 +13,12 @@ interface Booking {
   name: string;
   email: string;
   phone: string;
+  serviceId?: string | number;
   serviceName: string;
   price: number;
   appointmentDate: string;
   appointmentTime: string;
+  notes?: string;
 }
 
 export default function CheckoutPage() {
@@ -54,31 +55,29 @@ export default function CheckoutPage() {
     setError(null);
 
     try {
-      const response = await fetch('/api/checkout', {
+      const res = await fetch('/api/appointments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          bookingId: booking.id,
           name: booking.name,
           email: booking.email,
-          amount: booking.price,
+          phone: booking.phone,
+          serviceId: booking.serviceId,
           serviceName: booking.serviceName,
+          price: booking.price,
+          appointmentDate: booking.appointmentDate,
+          appointmentTime: booking.appointmentTime,
+          notes: booking.notes,
         }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to create checkout session');
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to create appointment');
       }
 
-      const { sessionId, url } = await response.json();
-
-      // Redirect to Stripe checkout or use Stripe.js
-      if (url) {
-        window.location.href = url;
-      } else {
-        const stripe = await loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLIC_KEY!);
-        await stripe?.redirectToCheckout({ sessionId });
-      }
+      const { appointment } = await res.json();
+      window.location.href = `/checkout/success?appointment_id=${appointment.id}`;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
       setProcessing(false);

@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Calendar } from '@/components/ui/calendar';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, validatePhoneWithCountryCode } from '@/lib/utils';
 
 interface BookingFormProps {
   serviceId: string | number;
@@ -38,6 +38,7 @@ export function BookingForm({ serviceId, serviceName, price }: BookingFormProps)
   const [loading, setLoading] = useState(false);
   const [userLoaded, setUserLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [phoneWarning, setPhoneWarning] = useState<string | null>(null);
   const [showUnavailableAlert, setShowUnavailableAlert] = useState(false);
   const [showUnavailableTimeAlert, setShowUnavailableTimeAlert] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
@@ -136,9 +137,14 @@ export function BookingForm({ serviceId, serviceName, price }: BookingFormProps)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError(null);
-
+    setPhoneWarning(null);
+    const phoneValidation = validatePhoneWithCountryCode(formData.phone);
+    if (phoneValidation) {
+      setPhoneWarning(phoneValidation);
+      return;
+    }
+    setLoading(true);
     try {
       const response = await fetch('/api/bookings', {
         method: 'POST',
@@ -248,11 +254,19 @@ export function BookingForm({ serviceId, serviceName, price }: BookingFormProps)
                 name="phone"
                 type="tel"
                 value={formData.phone}
-                onChange={handleChange}
-                placeholder={isAdmin ? "Guest's phone" : '+212 600 000 000'}
+                onChange={(e) => {
+                  handleChange(e);
+                  setPhoneWarning(null);
+                }}
+                placeholder={isAdmin ? "Guest's phone" : '212600000000'}
                 className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 required
               />
+              {phoneWarning && (
+                <p className="text-sm text-amber-600 dark:text-amber-500" role="alert">
+                  {phoneWarning}
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="booking-cin">CIN</Label>

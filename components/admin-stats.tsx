@@ -17,17 +17,17 @@ export function AdminStats() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchBookings = async () => {
+    const fetchStats = async () => {
       try {
-        const response = await fetch('/api/bookings');
+        const response = await fetch('/api/appointments', { credentials: 'include' });
         if (response.ok) {
           const data = await response.json();
-          const bookings = data.bookings;
+          const appointments = data.appointments ?? [];
 
-          const totalBookings = bookings.length;
-          const completedBookings = bookings.filter((b: any) => b.status === 'completed').length;
-          const pendingBookings = bookings.filter((b: any) => b.status === 'pending').length;
-          const totalRevenue = bookings.reduce((sum: number, b: any) => sum + (b.price || 0), 0);
+          const totalBookings = appointments.length;
+          const completedBookings = appointments.filter((a: { status: string }) => a.status === 'completed').length;
+          const pendingBookings = appointments.filter((a: { status: string }) => a.status === 'pending').length;
+          const totalRevenue = appointments.reduce((sum: number, a: { totalPrice?: number }) => sum + (Number(a.totalPrice) || 0), 0);
 
           setStats({
             totalBookings,
@@ -43,7 +43,7 @@ export function AdminStats() {
       }
     };
 
-    fetchBookings();
+    fetchStats();
   }, []);
 
   const statCards = [

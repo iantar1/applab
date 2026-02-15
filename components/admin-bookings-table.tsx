@@ -7,31 +7,32 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatCurrency } from '@/lib/utils';
 
-interface Booking {
-  id: number;
-  name: string;
-  email: string;
-  phone: string;
-  serviceName: string;
+/** Appointment from GET /api/appointments (admin sees all) */
+interface AppointmentRow {
+  id: string;
   appointmentDate: string;
   appointmentTime: string;
   status: string;
-  price: number;
-  createdAt: string;
+  totalPrice: number;
+  guestName: string | null;
+  guestEmail: string | null;
+  guestPhone: string | null;
+  service?: { name: string };
+  user?: { fullName: string; email: string; phone: string } | null;
 }
 
 export function AdminBookingsTable() {
-  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [appointments, setAppointments] = useState<AppointmentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchBookings = async () => {
+    const fetchAppointments = async () => {
       try {
-        const response = await fetch('/api/bookings');
-        if (!response.ok) throw new Error('Failed to fetch bookings');
+        const response = await fetch('/api/appointments', { credentials: 'include' });
+        if (!response.ok) throw new Error('Failed to fetch appointments');
         const data = await response.json();
-        setBookings(data.bookings);
+        setAppointments(data.appointments ?? []);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'An error occurred');
       } finally {
@@ -39,12 +40,13 @@ export function AdminBookingsTable() {
       }
     };
 
-    fetchBookings();
+    fetchAppointments();
   }, []);
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'confirmed':
+      case 'paid':
         return 'bg-green-100 text-green-800';
       case 'pending':
         return 'bg-yellow-100 text-yellow-800';
@@ -90,7 +92,7 @@ export function AdminBookingsTable() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Recent Bookings ({bookings.length})</CardTitle>
+        <CardTitle>Recent Bookings ({appointments.length})</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">
@@ -106,27 +108,27 @@ export function AdminBookingsTable() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {bookings.map(booking => (
-                <tr key={booking.id} className="text-sm hover:bg-muted/50">
+              {appointments.map((apt) => (
+                <tr key={apt.id} className="text-sm hover:bg-muted/50">
                   <td className="py-3">
                     <div>
-                      <p className="font-medium">{booking.name}</p>
-                      <p className="text-xs text-muted-foreground">{booking.email}</p>
+                      <p className="font-medium">{apt.guestName ?? apt.user?.fullName ?? '—'}</p>
+                      <p className="text-xs text-muted-foreground">{apt.guestEmail ?? apt.user?.email ?? '—'}</p>
                     </div>
                   </td>
-                  <td className="py-3">{booking.serviceName}</td>
+                  <td className="py-3">{apt.service?.name ?? '—'}</td>
                   <td className="py-3">
                     <div>
-                      <p>{new Date(booking.appointmentDate).toLocaleDateString()}</p>
-                      <p className="text-xs text-muted-foreground">{booking.appointmentTime}</p>
+                      <p>{new Date(apt.appointmentDate).toLocaleDateString()}</p>
+                      <p className="text-xs text-muted-foreground">{apt.appointmentTime}</p>
                     </div>
                   </td>
                   <td className="py-3">
-                    <Badge className={getStatusColor(booking.status)}>
-                      {booking.status}
+                    <Badge className={getStatusColor(apt.status)}>
+                      {apt.status}
                     </Badge>
                   </td>
-                  <td className="py-3 font-semibold">{formatCurrency(booking.price)}</td>
+                  <td className="py-3 font-semibold">{formatCurrency(apt.totalPrice)}</td>
                   <td className="py-3">
                     <Button variant="outline" size="sm">
                       View
@@ -138,7 +140,7 @@ export function AdminBookingsTable() {
           </table>
         </div>
 
-        {bookings.length === 0 && (
+        {appointments.length === 0 && (
           <div className="text-center py-8">
             <p className="text-muted-foreground">No bookings yet</p>
           </div>

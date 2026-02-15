@@ -34,7 +34,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useRouter } from 'next/navigation';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, validatePhoneWithCountryCode } from '@/lib/utils';
 
 const INSURANCE_COMPANIES = [
   'Wafa Assurance',
@@ -568,6 +568,11 @@ export default function HomePage() {
       setSettingsError('Name, email, phone and CIN are required.');
       return;
     }
+    const phoneValidation = validatePhoneWithCountryCode(phone);
+    if (phoneValidation) {
+      setSettingsError(phoneValidation);
+      return;
+    }
     if (newPassword && newPassword !== confirmPassword) {
       setSettingsError('New password and confirmation do not match.');
       return;
@@ -611,6 +616,11 @@ export default function HomePage() {
     setSendError(null);
     if (!sendForm.toPhone.trim() || !sendForm.body.trim()) {
       setSendError('Phone number and message are required.');
+      return;
+    }
+    const phoneValidation = validatePhoneWithCountryCode(sendForm.toPhone);
+    if (phoneValidation) {
+      setSendError(phoneValidation);
       return;
     }
     setSendLoading(true);
@@ -1088,7 +1098,7 @@ export default function HomePage() {
                     onChange={(e) =>
                       setSettingsForm((prev) => ({ ...prev, phone: e.target.value }))
                     }
-                    placeholder="Phone number"
+                    placeholder="Country code + number, e.g. 212612345678 (no +)"
                   />
                 </div>
                 <div className="space-y-2">

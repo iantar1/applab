@@ -1,4 +1,6 @@
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { BrowseServicesLink } from '@/components/browse-services-link';
 
 export function HeroSection() {
   return (
@@ -12,11 +14,9 @@ export function HeroSection() {
           Save time, avoid long waiting queues, and access professional healthcare quickly and conveniently.
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
-          <Button size="lg" variant="secondary" className="bg-white text-primary hover:bg-white/90">
-            Browse Services
-          </Button>
-          <Button size="lg" variant="outline" className="border-white bg-transparent text-white hover:bg-white/20">
-            Learn More
+          <BrowseServicesLink />
+          <Button asChild size="lg" variant="outline" className="border-white bg-transparent text-white hover:bg-white/20">
+            <Link href="/learn-more">Learn More</Link>
           </Button>
         </div>
       </div>

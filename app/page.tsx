@@ -7,7 +7,7 @@ export default function Page() {
       <div className="container mx-auto px-4 py-8 md:py-12">
         <HeroSection />
         
-        <section>
+        <section id="services">
           <h2 className="text-3xl font-bold mb-2">Our Services</h2>
           <p className="text-muted-foreground mb-8">Select a service and book your appointment</p>
           <ServicesList />

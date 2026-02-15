@@ -16,18 +16,57 @@ When the user asks "where can I book" or "how do I book", give them these exact 
 
 const SYSTEM_PROMPT = `You are an AI assistant for a hospital appointment web application (AppointLab). You are replying to a client via WhatsApp.
 
-STRICT RULE: You ONLY answer questions about USING this app. You do NOT give medical advice, health diagnosis, or unrelated topics.
+You ONLY answer questions about USING this app. You do NOT give medical advice, health diagnosis, or unrelated topics.
 
-Allowed topics: creating an account, booking an appointment, viewing or cancelling appointments, updating profile, how to use the app.
+Allowed topics: creating an account, booking an appointment, viewing or cancelling appointments, updating profile, how to use the app, general greetings.
 
-For ANY question outside the above, reply with exactly: "${REFUSAL_MESSAGE}"
+For questions clearly outside the app (e.g., weather, capitals, medical symptoms), reply: "${REFUSAL_MESSAGE}"
 
-When the question IS about the app: be helpful, friendly, and concise. Keep responses short (suitable for WhatsApp, under 200 words).
+Guidelines:
+- Be helpful, friendly, and conversational
+- Keep responses short (suitable for WhatsApp, under 150 words)
+- Remember the conversation context - don't repeat yourself
+- If user says hi/hello, greet them warmly and offer help
+- If user says thanks/bye, respond appropriately
+- Answer follow-up questions naturally based on conversation history
 ${APP_NAVIGATION_GUIDE}`;
+
+interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
 
 /** Normalize phone for DB comparison (digits only, optional strip leading 0) */
 function normalizePhone(phone: string): string {
   return (phone || "").replace(/\D/g, "").trim();
+}
+
+/** Get conversation history for a phone number (last N messages) */
+async function getConversationHistory(phone: string, limit = 10): Promise<ChatMessage[]> {
+  const digits = normalizePhone(phone);
+  if (!digits) return [];
+
+  try {
+    const messages = await prisma.message.findMany({
+      where: {
+        OR: [
+          { fromPhone: { contains: digits.slice(-9) } },
+          { toPhone: { contains: digits.slice(-9) } },
+        ],
+      },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    });
+
+    // Reverse to chronological order and convert to chat format
+    return messages.reverse().map((msg) => ({
+      role: msg.direction === "inbound" ? "user" as const : "assistant" as const,
+      content: msg.body,
+    }));
+  } catch (e) {
+    console.error("Error fetching conversation history:", e);
+    return [];
+  }
 }
 
 /** Get appointments for a client by phone (guest or user) */
@@ -87,17 +126,33 @@ function formatAppointmentsForAI(appointments: any[]): string {
 
 function isOffTopic(message: string): boolean {
   const lower = message.toLowerCase().trim();
+  
+  // Allow greetings and common conversational phrases
+  const conversationalPatterns = [
+    /^(hi|hello|hey|bonjour|salut|salam|مرحبا|السلام)/i,
+    /^(thanks|thank you|merci|شكرا)/i,
+    /^(bye|goodbye|au revoir|مع السلامة)/i,
+    /^(ok|okay|yes|no|sure|alright)/i,
+    /^(what|how|where|when|can|do|is|are)/i,
+    /\?$/, // Questions should be answered
+  ];
+  if (conversationalPatterns.some((p) => p.test(lower))) return false;
+
+  // Clearly off-topic patterns
   const offTopicPatterns = [
     /\bcapital\b/,
     /\bcountry\b/,
     /\bweather\b/,
-    /\bmedical\b/,
+    /\bmedical advice\b/,
     /\bsymptom\b/,
     /\bdiagnos/,
     /\bdisease\b/,
     /\bmedication\b/,
+    /\bprescri/,
   ];
   if (offTopicPatterns.some((p) => p.test(lower))) return true;
+
+  // App-related keywords
   const appKeywords = [
     "account",
     "register",
@@ -116,22 +171,52 @@ function isOffTopic(message: string): boolean {
     "réservation",
     "موعد",
     "حجز",
+    "service",
+    "price",
+    "cost",
+    "time",
+    "date",
+    "available",
+    "schedule",
   ];
-  return !appKeywords.some((k) => lower.includes(k));
+  
+  // If it's a short message or contains app keywords, allow it
+  if (lower.length < 30 || appKeywords.some((k) => lower.includes(k))) {
+    return false;
+  }
+
+  return true;
 }
 
-async function getAIReply(message: string, appointmentContext: string): Promise<string> {
+async function getAIReply(
+  message: string,
+  appointmentContext: string,
+  conversationHistory: ChatMessage[]
+): Promise<string> {
   const openrouterKey = process.env.OPENROUTER_API_KEY;
   const geminiKey = process.env.GEMINI_API_KEY;
 
+  // Build messages array with system prompt and history
+  const messages: { role: string; content: string }[] = [
+    { role: "system", content: SYSTEM_PROMPT },
+  ];
+
+  // Add conversation history (skip the current message if it's at the end)
+  const historyToAdd = conversationHistory.slice(-8); // Keep last 8 messages for context
+  for (const msg of historyToAdd) {
+    // Skip if this is the current incoming message (already at the end)
+    if (msg.role === "user" && msg.content === message) continue;
+    messages.push({
+      role: msg.role === "user" ? "user" : "assistant",
+      content: msg.content,
+    });
+  }
+
+  // Add current message with appointment context if available
   const userContent = appointmentContext
     ? `${message}\n\n[CONTEXT - Client's appointment data]:\n${appointmentContext}`
     : message;
-
-  const messages = [
-    { role: "system", content: SYSTEM_PROMPT },
-    { role: "user", content: userContent },
-  ];
+  messages.push({ role: "user", content: userContent });
 
   if (openrouterKey) {
     const models = [
@@ -167,6 +252,12 @@ async function getAIReply(message: string, appointmentContext: string): Promise<
 
   if (geminiKey) {
     try {
+      // Convert messages to Gemini format (skip system, it goes separately)
+      const contents = messages.slice(1).map((m) => ({
+        role: m.role === "user" ? "user" : "model",
+        parts: [{ text: m.content }],
+      }));
+
       const res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
         {
@@ -174,7 +265,7 @@ async function getAIReply(message: string, appointmentContext: string): Promise<
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-            contents: [{ role: "user", parts: [{ text: userContent }] }],
+            contents,
             generationConfig: { temperature: 0.7, maxOutputTokens: 512 },
           }),
         }
@@ -187,7 +278,7 @@ async function getAIReply(message: string, appointmentContext: string): Promise<
     }
   }
 
-  return "Thanks for your message. For booking or managing appointments, please use our app: open the Appointments tab to book and the History tab to view or cancel. If you have a specific question, reply here and I'll help.";
+  return "Thanks for your message! How can I help you with the AppointLab app today? I can assist with booking appointments, checking your reservations, or navigating the app.";
 }
 
 /**
@@ -221,13 +312,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ reply: "" });
     }
 
-    if (isOffTopic(text)) {
+    // Get conversation history for context
+    const conversationHistory = await getConversationHistory(fromPhone);
+
+    // Only refuse clearly off-topic messages if there's no conversation context
+    // This allows follow-up questions like "ok" or "thanks" to work naturally
+    if (isOffTopic(text) && conversationHistory.length === 0) {
       return NextResponse.json({ reply: REFUSAL_MESSAGE });
     }
 
     const appointments = await getAppointmentsByPhone(fromPhone);
     const appointmentContext = formatAppointmentsForAI(appointments);
-    const reply = await getAIReply(text, appointmentContext);
+    const reply = await getAIReply(text, appointmentContext, conversationHistory);
 
     return NextResponse.json({ reply });
   } catch (error) {

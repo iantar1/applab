@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyJwt } from '@/lib/auth';
+import {
+  sendAppointmentCancelledWhatsApp,
+  sendAppointmentRescheduledWhatsApp,
+  sendAppointmentCompletedWhatsApp,
+} from '@/lib/notification-service';
 
 export async function GET(
   request: Request,
@@ -73,17 +78,46 @@ export async function PATCH(
 
     const appointment = await prisma.appointment.findUnique({
       where: { id },
-      include: { service: true },
+      include: {
+        service: true,
+        user: { select: { phone: true, fullName: true } },
+      },
     });
     if (!appointment) {
       return NextResponse.json({ error: 'Appointment not found' }, { status: 404 });
     }
+
+    const clientPhone = appointment.guestPhone || appointment.user?.phone || null;
+    const clientName =
+      (appointment.guestName || appointment.user?.fullName || 'Client').trim() || 'Client';
+    const serviceName = appointment.service.name;
+    const formatDate = (d: Date) =>
+      d.toLocaleDateString('en-GB', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      });
+    const oldDateStr = formatDate(appointment.appointmentDate);
 
     if (action === 'cancel') {
       await prisma.appointment.update({
         where: { id },
         data: { status: 'cancelled' },
       });
+      if (clientPhone) {
+        try {
+          await sendAppointmentCancelledWhatsApp({
+            phone: clientPhone,
+            name: clientName,
+            serviceName,
+            appointmentDate: oldDateStr,
+            appointmentTime: appointment.appointmentTime,
+          });
+        } catch (err) {
+          console.error('WhatsApp cancellation notification failed:', err);
+        }
+      }
       return NextResponse.json({ success: true, message: 'Appointment cancelled.' });
     }
 
@@ -92,6 +126,19 @@ export async function PATCH(
         where: { id },
         data: { status: 'completed' },
       });
+      if (clientPhone) {
+        try {
+          await sendAppointmentCompletedWhatsApp({
+            phone: clientPhone,
+            name: clientName,
+            serviceName,
+            appointmentDate: oldDateStr,
+            appointmentTime: appointment.appointmentTime,
+          });
+        } catch (err) {
+          console.error('WhatsApp completed notification failed:', err);
+        }
+      }
       return NextResponse.json({ success: true, message: 'Appointment marked as done.' });
     }
 
@@ -135,6 +182,20 @@ export async function PATCH(
         appointmentTime: normalizedTime,
       },
     });
+    const newDateStr = formatDate(appointmentDate);
+    if (clientPhone) {
+      try {
+        await sendAppointmentRescheduledWhatsApp({
+          phone: clientPhone,
+          name: clientName,
+          serviceName,
+          newDate: newDateStr,
+          newTime: normalizedTime,
+        });
+      } catch (err) {
+        console.error('WhatsApp reschedule notification failed:', err);
+      }
+    }
     return NextResponse.json({ success: true, message: 'Appointment rescheduled.' });
   } catch (error) {
     console.error('Error updating appointment:', error);

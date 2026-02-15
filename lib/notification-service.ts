@@ -171,6 +171,77 @@ export async function sendReminderEmail(payload: NotificationPayload) {
 }
 
 /**
+ * Notify client via WhatsApp when admin cancels an appointment.
+ */
+export async function sendAppointmentCancelledWhatsApp(payload: {
+  phone: string;
+  name: string;
+  serviceName: string;
+  appointmentDate: string;
+  appointmentTime: string;
+}) {
+  const dayDate =
+    payload.appointmentDate &&
+    !Number.isNaN(new Date(payload.appointmentDate).getTime())
+      ? new Date(payload.appointmentDate).toLocaleDateString("en-GB", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        })
+      : payload.appointmentDate;
+  const message = `Hi ${payload.name}, your appointment for ${payload.serviceName} on ${dayDate} at ${payload.appointmentTime} has been cancelled. If you have any questions, please contact us.`;
+  return sendWhatsApp(payload.phone, message);
+}
+
+/**
+ * Notify client via WhatsApp when admin reschedules an appointment.
+ */
+export async function sendAppointmentRescheduledWhatsApp(payload: {
+  phone: string;
+  name: string;
+  serviceName: string;
+  newDate: string;
+  newTime: string;
+}) {
+  const dayDate =
+    payload.newDate && !Number.isNaN(new Date(payload.newDate).getTime())
+      ? new Date(payload.newDate).toLocaleDateString("en-GB", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        })
+      : payload.newDate;
+  const message = `Hi ${payload.name}, your appointment for ${payload.serviceName} has been rescheduled to ${dayDate} at ${payload.newTime}. Please save the new date and time.`;
+  return sendWhatsApp(payload.phone, message);
+}
+
+/**
+ * Notify client via WhatsApp when admin marks an appointment as completed.
+ */
+export async function sendAppointmentCompletedWhatsApp(payload: {
+  phone: string;
+  name: string;
+  serviceName: string;
+  appointmentDate: string;
+  appointmentTime: string;
+}) {
+  const dayDate =
+    payload.appointmentDate &&
+    !Number.isNaN(new Date(payload.appointmentDate).getTime())
+      ? new Date(payload.appointmentDate).toLocaleDateString("en-GB", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        })
+      : payload.appointmentDate;
+  const message = `Hi ${payload.name}, your appointment for ${payload.serviceName} on ${dayDate} at ${payload.appointmentTime} has been marked as completed. Thank you for visiting us!`;
+  return sendWhatsApp(payload.phone, message);
+}
+
+/**
  * Send all notifications (email + WhatsApp) for a booking
  */
 export async function sendAllNotifications(payload: NotificationPayload) {

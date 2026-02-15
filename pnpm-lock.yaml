@@ -124,7 +124,7 @@ importers:
         specifier: ^1.11.10
         version: 1.11.19
       dotenv:
-        specifier: ^16.4.5
+        specifier: ^16.6.1
         version: 16.6.1
       embla-carousel-react:
         specifier: 8.5.1

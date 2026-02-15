@@ -14,23 +14,25 @@ APP STRUCTURE (use this to guide users):
 - Sign up / log in: From the main landing page; they need an account to book and see appointments.
 When the user asks "where can I book" or "how do I book", give them these exact steps in the app.`;
 
-const SYSTEM_PROMPT = `You are an AI assistant for a hospital appointment web application (AppointLab).
+const SYSTEM_PROMPT = `You are a friendly AI assistant for a hospital appointment web application (AppointLab).
 
-STRICT RULE: You ONLY answer questions about USING this app. You do NOT answer: medical advice, health diagnosis, general knowledge, geography, history, science, trivia, or any topic unrelated to the app.
-
-Allowed topics ONLY:
+You are here to help users with:
 - Creating an account / sign up / register
 - Booking an appointment
 - Viewing or listing appointments
 - Cancelling or rescheduling appointments
 - Updating profile information
 - How to use the app (navigation, menu, features)
+- General questions and guidance
 
-For ANY question outside the above, you MUST reply with exactly: "${REFUSAL_MESSAGE}"
-Do not add anything else. Do not explain. Do not answer the question.
+Be friendly, helpful, and conversational. Keep responses under 200 words.
 
-When the question IS about the app: be helpful, friendly, and concise. Keep responses under 200 words.
-${APP_NAVIGATION_GUIDE}`;
+IMPORTANT: When users greet you with "hi", "hello", "hey", or similar, respond with exactly:
+"Hi there! 😊 I'm here to assist you with everything you need—whether it's about health, appointments, or just having a friendly chat. Just let me know what you'd like to do!"
+
+${APP_NAVIGATION_GUIDE}
+
+For medical questions, politely redirect to booking appropriate services in the app.`;
 
 // Helper to get user from request
 async function getUserFromRequest(req: NextRequest) {
@@ -106,31 +108,44 @@ function formatAppointmentsForAI(appointments: any[]) {
   return info;
 }
 
-// Detect off-topic questions (general knowledge, geography, etc.) — refuse before calling any LLM
+// Detect off-topic questions - only refuse truly inappropriate content
 function isOffTopic(message: string): boolean {
   const lower = message.toLowerCase().trim();
-  const offTopicPatterns = [
-    /\bcapital\b/, /\bcountry\b/, /\bcountries\b/, /\bcity\b/, /\bcities\b/,
-    /\bpopulation\b/, /\bweather\b/, /\bclimate\b/, /\bhistory\b/, /\bwho is\b/,
-    /\bwhat is\b.*\b(morocco|france|usa|world|earth)\b/, /\bwhere is\b/, /\bwhen did\b/,
-    /\bhow many\b/, /\bwhy does\b.*\b(sun|rain|sky)\b/, /\brecipe\b/, /\bcooking\b/,
-    /\bsport\b/, /\bfootball\b/, /\bgame\b/, /\bmovie\b/, /\bmusic\b(?!\s*(book|appointment))/,
-    /\btrivia\b/, /\bgeneral knowledge\b/, /\bquiz\b/, /\bdefine\b/, /\bmeaning of\b/,
-    /\btranslate\b(?!\s*(app|page|menu))/, /\bwrite (a |me )?(poem|story|essay)\b/,
-    /\bmedical\b/, /\bsymptom\b/, /\bdiagnos/, /\bdisease\b/, /\bmedication\b/,
-    /\bpregnant\b/, /\bheadache\b/, /\bfever\b/, /\bpain\b(?!\s*(point|in the app))/,
+  
+  // Allow greetings and common conversational phrases
+  const conversationalPatterns = [
+    /^(hi|hello|hey|bonjour|salut|salam|مرحبا)/i,
+    /^(thanks|thank you|merci|شكرا)/i,
+    /^(bye|goodbye|au revoir|مع السلامة)/i,
+    /^(ok|okay|yes|no|sure|alright)/i,
+    /^(what|how|where|when|can|do|is|are)/i,
+    /\?$/, // Questions should be answered
   ];
-  if (offTopicPatterns.some((p) => p.test(lower))) return true;
-  // If nothing app-related is mentioned, treat as off-topic
-  const appKeywords = [
+  if (conversationalPatterns.some((p) => p.test(lower))) return false;
+
+  // Only refuse clearly inappropriate content
+  const inappropriatePatterns = [
+    /\bporn\b/, /\bsex\b/, /\bdrugs\b/, /\bviolence\b/, /\bhate\b/,
+    /\bdiscriminat/i, /\bracist\b/, /\bsexist\b/, /\bharass/i,
+    /\billegal\b/, /\bcriminal\b/, /\bterrorist\b/,
+  ];
+  if (inappropriatePatterns.some((p) => p.test(lower))) return true;
+
+  // Allow general questions and app-related topics
+  const allowedTopics = [
     "account", "register", "sign up", "login", "profile", "appointment", "book",
-    "booking", "reservation", "cancel", "reschedule", "view", "upcoming", "help",
-    "app", "rdv", "réservation", "compte", "profil", "موعد", "حجز", "تطبيق",
-    "where", "how do i", "how to",
-    "hi", "hello", "hey", "helo", "bonjour", "salut", "start", "begin",
+    "booking", "reservation", "cancel", "reschedule", "view", "help", "app",
+    "rdv", "réservation", "compte", "profil", "موعد", "حجز", "تطبيق",
+    "time", "date", "schedule", "service", "doctor", "hospital", "clinic",
+    "health", "medical", "patient", "visit", "consultation",
   ];
-  const looksAppRelated = appKeywords.some((k) => lower.includes(k));
-  return !looksAppRelated;
+  
+  // If message contains app-related keywords or is a general question, allow it
+  if (allowedTopics.some((k) => lower.includes(k)) || lower.length < 50) {
+    return false;
+  }
+
+  return false; // Be permissive - allow most questions
 }
 
 // Check if message is asking about appointments
@@ -157,9 +172,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Refuse off-topic questions immediately — do not call the LLM
+    // Only refuse truly inappropriate content
     if (isOffTopic(message)) {
-      return NextResponse.json({ reply: REFUSAL_MESSAGE });
+      return NextResponse.json({ reply: "I'm here to help you with the AppointLab app and general questions. What can I assist you with today?" });
     }
 
     // Check if user is asking about appointments
@@ -209,10 +224,10 @@ export async function POST(req: NextRequest) {
     // Try OpenRouter API first with multiple free models
     if (openrouterKey) {
       const freeModels = [
-        "google/gemini-2.0-flash-exp:free",
-        "meta-llama/llama-3.2-3b-instruct:free",
-        "qwen/qwen-2.5-72b-instruct:free",
         "liquid/lfm-2.5-1.2b-instruct:free",
+        "arcee-ai/trinity-large-preview:free",
+        "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
+        "nvidia/nemotron-nano-9b-v2:free",
       ];
       
       for (const model of freeModels) {
@@ -239,8 +254,25 @@ export async function POST(req: NextRequest) {
           console.log("OpenRouter response data:", JSON.stringify(data).substring(0, 500));
 
           if (response.ok && data?.choices?.[0]?.message?.content) {
-            const reply = data.choices[0].message.content;
-            return NextResponse.json({ reply });
+            let reply = data.choices[0].message.content.trim();
+            
+            // Clean the response - remove any reasoning content that might be mixed in
+            // Some models include internal reasoning in the content, we want to extract only the final answer
+            if (reply.includes('\n\n') && reply.toLowerCase().includes('rule')) {
+              // If it contains reasoning about rules, extract only the final response
+              const lines = reply.split('\n\n');
+              const lastLine = lines[lines.length - 1];
+              if (lastLine && lastLine.length > 10) {
+                reply = lastLine;
+              }
+            }
+            
+            // Remove any remaining reasoning prefixes
+            reply = reply.replace(/^.*?(I am here only to help|Hello|Hi|To book|You don't have)/i, '$1');
+            
+            if (reply && reply.length > 5) {
+              return NextResponse.json({ reply });
+            }
           } else if (data?.error) {
             console.error(`OpenRouter API error with ${model}:`, data.error);
             // Continue to next model
@@ -313,10 +345,9 @@ function isAppRelated(message: string): boolean {
 }
 
 function getFallbackResponse(message: string, appointmentContext?: string): string {
-  // Refuse off-topic questions even in fallback
-  if (!isAppRelated(message)) {
-    return REFUSAL_MESSAGE;
-  }
+  // Be helpful for all questions
+  const lower = message.toLowerCase();
+  
   // Handle appointment-related queries when we have context
   if (appointmentContext && isAskingAboutAppointments(message)) {
     if (appointmentContext.includes("not logged in")) {
@@ -330,10 +361,25 @@ function getFallbackResponse(message: string, appointmentContext?: string): stri
       return `Here are your upcoming appointments:\n\n${lines.join("\n")}\n\nIs there anything else you'd like to know about the app?`;
     }
   }
+  
   // Specific guidance when they ask where/how to book
   if (message.toLowerCase().includes("where") && (message.toLowerCase().includes("book") || message.toLowerCase().includes("appointment"))) {
     return "To book an appointment in the app: open the **Appointments** tab in the left menu (calendar icon). You'll see our services—click **Book Now** on the one you want, then choose a date and time and complete the booking.";
   }
-  // API unavailable but question is app-related
-  return "I'm having trouble connecting right now. Please try again in a moment, or use the Appointments tab in the left menu to book and manage appointments.";
+  
+  // General helpful responses
+  if (lower.includes("hello") || lower.includes("hi") || lower.includes("hey")) {
+    return "Hi there! � I'm here to assist you with everything you need—whether it's about health, appointments, or just having a friendly chat. Just let me know what you'd like to do!";
+  }
+  
+  if (lower.includes("thank")) {
+    return "You're welcome! 😊 Is there anything else I can help you with regarding the app?";
+  }
+  
+  if (lower.includes("bye") || lower.includes("goodbye")) {
+    return "Goodbye! 👋 Feel free to come back anytime if you need help with AppointLab.";
+  }
+  
+  // API unavailable but question is general
+  return "I'm here to help you with AppointLab! You can ask me about booking appointments, viewing your schedule, managing your account, or any questions about using the app. What would you like to know?";
 }

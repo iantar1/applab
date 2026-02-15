@@ -8,16 +8,20 @@ const REFUSAL_MESSAGE = "I am here only to help you use the hospital appointment
 
 const APP_NAVIGATION_GUIDE = `Use this to guide users in the app: To book an appointment, go to the Appointments tab in the left menu, then click Book Now on a service and follow the steps. To view appointments, use the History tab. To change profile, use Settings.`;
 
-const SYSTEM_PROMPT = `You are an AI assistant for a hospital appointment web application (AppointLab).
+const SYSTEM_PROMPT = `You are a friendly AI assistant for a hospital appointment web application (AppointLab).
 
-Your ONLY role is to guide users on how to use this application: creating an account, booking an appointment, viewing or cancelling appointments, updating profile.
+You are here to help users with:
+- Creating an account, booking appointments, viewing or cancelling appointments
+- Updating profile, how to use the app, general greetings and questions
 
-You MUST refuse medical advice, health diagnosis, general knowledge, and any question unrelated to the app. If the question is outside app usage context, reply only: "I am here only to help you use the hospital appointment app."
+Be friendly and helpful. Keep responses very short (2-3 sentences max) since they will be spoken aloud.
 
-When users ask where or how to book an appointment, guide them: open the Appointments tab in the left menu, choose a service and click Book Now, then pick date and time.
+IMPORTANT: When users greet you with "hi", "hello", "hey", or similar, respond with:
+"Hi there! I'm here to assist you with everything you need—whether it's about health, appointments, or just having a friendly chat. Just let me know what you'd like to do!"
 
-Keep responses very short (2-3 sentences max) since they will be spoken aloud.
-${APP_NAVIGATION_GUIDE}`;
+${APP_NAVIGATION_GUIDE}
+
+For medical questions, redirect to booking appropriate services in the app.`;
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -26,19 +30,40 @@ interface ChatMessage {
 
 function isOffTopic(message: string): boolean {
   const lower = message.toLowerCase().trim();
-  const offTopicPatterns = [
-    /\bcapital\b/, /\bcountry\b/, /\bcity\b/, /\bpopulation\b/, /\bweather\b/,
-    /\bhistory\b/, /\bwho is\b/, /\bwhere is\b/, /\bwhen did\b/, /\bhow many\b/,
-    /\brecipe\b/, /\bsport\b/, /\bmovie\b/, /\btrivia\b/,
-    /\bmedical\b/, /\bsymptom\b/, /\bdiagnos/, /\bdisease\b/, /\bmedication\b/,
-    /\bwhat is\b.*\b(morocco|france|usa|world|earth|country|capital)\b/,
+  
+  // Allow greetings and common conversational phrases
+  const conversationalPatterns = [
+    /^(hi|hello|hey|bonjour|salut|salam|مرحبا)/i,
+    /^(thanks|thank you|merci|شكرا)/i,
+    /^(bye|goodbye|au revoir|مع السلامة)/i,
+    /^(ok|okay|yes|no|sure|alright)/i,
+    /^(what|how|where|when|can|do|is|are)/i,
+    /\?$/, // Questions should be answered
   ];
-  if (offTopicPatterns.some((p) => p.test(lower))) return true;
-  const appKeywords = [
+  if (conversationalPatterns.some((p) => p.test(lower))) return false;
+
+  // Only refuse clearly inappropriate content
+  const inappropriatePatterns = [
+    /\bporn\b/, /\bsex\b/, /\bdrugs\b/, /\bviolence\b/, /\bhate\b/,
+    /\bdiscriminat/i, /\bracist\b/, /\bsexist\b/, /\bharass/i,
+    /\billegal\b/, /\bcriminal\b/, /\bterrorist\b/,
+  ];
+  if (inappropriatePatterns.some((p) => p.test(lower))) return true;
+
+  // Allow general questions and app-related topics
+  const allowedTopics = [
     "account", "register", "login", "profile", "appointment", "book", "booking",
     "cancel", "view", "help", "app", "rdv", "réservation", "where", "how do i", "how to",
+    "time", "date", "schedule", "service", "doctor", "hospital", "clinic",
+    "health", "medical", "patient", "visit", "consultation",
   ];
-  return !appKeywords.some((k) => lower.includes(k));
+  
+  // If message contains app-related keywords or is a general question, allow it
+  if (allowedTopics.some((k) => lower.includes(k)) || lower.length < 50) {
+    return false;
+  }
+
+  return false; // Be permissive - allow most questions
 }
 
 function isAppRelated(input: string): boolean {
@@ -51,12 +76,10 @@ function isAppRelated(input: string): boolean {
 }
 
 function getAppFallbackResponse(input: string): string {
-  if (!isAppRelated(input)) {
-    return REFUSAL_MESSAGE;
-  }
   const lower = input.toLowerCase();
+  
   if (lower.includes("hello") || lower.includes("hi")) {
-    return "Hello! I'm here to help you use the appointment app. You can book, view, or cancel appointments. What would you like to do?";
+    return "Hi there! I'm here to assist you with everything you need—whether it's about health, appointments, or just having a friendly chat. Just let me know what you'd like to do!";
   }
   if (lower.includes("appointment") || lower.includes("book") || lower.includes("where")) {
     return "To book an appointment, open the Appointments tab in the left menu. Then click Book Now on the service you want and follow the steps to pick a date and time.";
@@ -67,6 +90,8 @@ function getAppFallbackResponse(input: string): string {
   if (lower.includes("thank") || lower.includes("bye")) {
     return "You're welcome. If you need more help with the app, just ask.";
   }
+  
+  // General helpful response
   return "I can help you with booking, viewing, or cancelling appointments, or with your account. What do you need?";
 }
 
@@ -97,7 +122,7 @@ async function getAIResponse(message: string, history: ChatMessage[]): Promise<s
         "X-Title": "AppLab Voice Assistant",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.0-flash-exp:free",
+        model: "liquid/lfm-2.5-1.2b-instruct:free",
         messages,
         max_tokens: 150,
         temperature: 0.7,
@@ -110,7 +135,21 @@ async function getAIResponse(message: string, history: ChatMessage[]): Promise<s
 
     const data = await response.json();
     const reply = data?.choices?.[0]?.message?.content;
-    return reply || getAppFallbackResponse(message);
+    if (reply) {
+      // Clean the response - remove any reasoning content that might be mixed in
+      let cleanReply = reply.trim();
+      if (cleanReply.includes('\n\n') && cleanReply.toLowerCase().includes('rule')) {
+        const lines = cleanReply.split('\n\n');
+        const lastLine = lines[lines.length - 1];
+        if (lastLine && lastLine.length > 10) {
+          cleanReply = lastLine;
+        }
+      }
+      cleanReply = cleanReply.replace(/^.*?(I am here only to help|Hello|Hi|To book|You don't have)/i, '$1');
+      
+      return cleanReply && cleanReply.length > 5 ? cleanReply : getAppFallbackResponse(message);
+    }
+    return getAppFallbackResponse(message);
   } catch {
     return getAppFallbackResponse(message);
   }

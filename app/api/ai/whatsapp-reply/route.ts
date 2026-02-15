@@ -14,21 +14,21 @@ APP STRUCTURE (use this to guide users):
 - Profile/settings: The "Settings" tab. Sign up / log in from the main landing page.
 When the user asks "where can I book" or "how do I book", give them these exact steps.`;
 
-const SYSTEM_PROMPT = `You are an AI assistant for a hospital appointment web application (AppointLab). You are replying to a client via WhatsApp.
+const SYSTEM_PROMPT = `You are a friendly AI assistant for a hospital appointment web application (AppointLab). You are replying to a client via WhatsApp.
 
-You ONLY answer questions about USING this app. You do NOT give medical advice, health diagnosis, or unrelated topics.
-
-Allowed topics: creating an account, booking an appointment, viewing or cancelling appointments, updating profile, how to use the app, general greetings.
-
-For questions clearly outside the app (e.g., weather, capitals, medical symptoms), reply: "${REFUSAL_MESSAGE}"
+You are here to help users with:
+- Creating an account, booking appointments, viewing or cancelling appointments
+- Updating profile, how to use the app, general greetings and questions
+- General guidance and support
 
 Guidelines:
 - Be helpful, friendly, and conversational
 - Keep responses short (suitable for WhatsApp, under 150 words)
 - Remember the conversation context - don't repeat yourself
-- If user says hi/hello, greet them warmly and offer help
+- If user says hi/hello, respond with: "Hi there! 😊 I'm here to assist you with everything you need—whether it's about health, appointments, or just having a friendly chat. Just let me know what you'd like to do!"
 - If user says thanks/bye, respond appropriately
 - Answer follow-up questions naturally based on conversation history
+- For medical questions, redirect to booking appropriate services
 ${APP_NAVIGATION_GUIDE}`;
 
 interface ChatMessage {
@@ -138,54 +138,29 @@ function isOffTopic(message: string): boolean {
   ];
   if (conversationalPatterns.some((p) => p.test(lower))) return false;
 
-  // Clearly off-topic patterns
-  const offTopicPatterns = [
-    /\bcapital\b/,
-    /\bcountry\b/,
-    /\bweather\b/,
-    /\bmedical advice\b/,
-    /\bsymptom\b/,
-    /\bdiagnos/,
-    /\bdisease\b/,
-    /\bmedication\b/,
-    /\bprescri/,
+  // Only refuse clearly inappropriate content
+  const inappropriatePatterns = [
+    /\bporn\b/, /\bsex\b/, /\bdrugs\b/, /\bviolence\b/, /\bhate\b/,
+    /\bdiscriminat/i, /\bracist\b/, /\bsexist\b/, /\bharass/i,
+    /\billegal\b/, /\bcriminal\b/, /\bterrorist\b/,
   ];
-  if (offTopicPatterns.some((p) => p.test(lower))) return true;
+  if (inappropriatePatterns.some((p) => p.test(lower))) return true;
 
-  // App-related keywords
-  const appKeywords = [
-    "account",
-    "register",
-    "sign up",
-    "login",
-    "profile",
-    "appointment",
-    "book",
-    "booking",
-    "cancel",
-    "reschedule",
-    "view",
-    "help",
-    "app",
-    "rdv",
-    "réservation",
-    "موعد",
-    "حجز",
-    "service",
-    "price",
-    "cost",
-    "time",
-    "date",
-    "available",
-    "schedule",
+  // Allow general questions and app-related topics
+  const allowedTopics = [
+    "account", "register", "sign up", "login", "profile", "appointment", "book",
+    "booking", "reservation", "cancel", "reschedule", "view", "help", "app",
+    "rdv", "réservation", "compte", "profil", "موعد", "حجز", "تطبيق",
+    "time", "date", "schedule", "service", "doctor", "hospital", "clinic",
+    "health", "medical", "patient", "visit", "consultation",
   ];
   
-  // If it's a short message or contains app keywords, allow it
-  if (lower.length < 30 || appKeywords.some((k) => lower.includes(k))) {
+  // If message contains app-related keywords or is a general question, allow it
+  if (allowedTopics.some((k) => lower.includes(k)) || lower.length < 50) {
     return false;
   }
 
-  return true;
+  return false; // Be permissive - allow most questions
 }
 
 async function getAIReply(
@@ -220,9 +195,10 @@ async function getAIReply(
 
   if (openrouterKey) {
     const models = [
-      "google/gemini-2.0-flash-exp:free",
-      "meta-llama/llama-3.2-3b-instruct:free",
-      "qwen/qwen-2.5-72b-instruct:free",
+      "liquid/lfm-2.5-1.2b-instruct:free",
+      "arcee-ai/trinity-large-preview:free",
+      "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
+      "nvidia/nemotron-nano-9b-v2:free",
     ];
     for (const model of models) {
       try {
@@ -243,7 +219,22 @@ async function getAIReply(
         });
         const data = await res.json();
         const reply = data?.choices?.[0]?.message?.content?.trim();
-        if (reply) return reply;
+        if (reply) {
+          // Clean the response - remove any reasoning content that might be mixed in
+          let cleanReply = reply;
+          if (cleanReply.includes('\n\n') && cleanReply.toLowerCase().includes('rule')) {
+            const lines = cleanReply.split('\n\n');
+            const lastLine = lines[lines.length - 1];
+            if (lastLine && lastLine.length > 10) {
+              cleanReply = lastLine;
+            }
+          }
+          cleanReply = cleanReply.replace(/^.*?(I am here only to help|Hello|Hi|To book|You don't have)/i, '$1');
+          
+          if (cleanReply && cleanReply.length > 5) {
+            return cleanReply;
+          }
+        }
       } catch (e) {
         console.error("OpenRouter whatsapp-reply error:", e);
       }

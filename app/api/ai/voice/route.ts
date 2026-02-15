@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const VOICE_ID = "hzLyDn3IrvrdH83BdqUu";
 
 const REFUSAL_MESSAGE = "I am here only to help you use the hospital appointment app.";
@@ -74,41 +74,43 @@ async function getAIResponse(message: string, history: ChatMessage[]): Promise<s
   if (isOffTopic(message)) {
     return REFUSAL_MESSAGE;
   }
-  if (!GEMINI_API_KEY) {
+  if (!OPENROUTER_API_KEY) {
     return getAppFallbackResponse(message);
   }
 
   try {
-    const contents = [
+    const messages = [
+      { role: "system", content: SYSTEM_PROMPT },
       ...history.map((msg) => ({
-        role: msg.role === "user" ? "user" : "model",
-        parts: [{ text: msg.content }],
+        role: msg.role as "user" | "assistant",
+        content: msg.content,
       })),
-      { role: "user", parts: [{ text: message }] },
+      { role: "user", content: message },
     ];
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents,
-          systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-          generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 150, // Keep responses short for voice
-          },
-        }),
-      }
-    );
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+        "X-Title": "AppLab Voice Assistant",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.0-flash-exp:free",
+        messages,
+        max_tokens: 150,
+        temperature: 0.7,
+      }),
+    });
 
     if (!response.ok) {
       return getAppFallbackResponse(message);
     }
 
     const data = await response.json();
-    return data.candidates?.[0]?.content?.parts?.[0]?.text || getAppFallbackResponse(message);
+    const reply = data?.choices?.[0]?.message?.content;
+    return reply || getAppFallbackResponse(message);
   } catch {
     return getAppFallbackResponse(message);
   }

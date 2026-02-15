@@ -127,6 +127,7 @@ function isOffTopic(message: string): boolean {
     "booking", "reservation", "cancel", "reschedule", "view", "upcoming", "help",
     "app", "rdv", "réservation", "compte", "profil", "موعد", "حجز", "تطبيق",
     "where", "how do i", "how to",
+    "hi", "hello", "hey", "helo", "bonjour", "salut", "start", "begin",
   ];
   const looksAppRelated = appKeywords.some((k) => lower.includes(k));
   return !looksAppRelated;
@@ -176,7 +177,7 @@ export async function POST(req: NextRequest) {
     // Try OpenRouter first, then Gemini, then fallback
     const openrouterKey = process.env.OPENROUTER_API_KEY;
     const geminiKey = process.env.GEMINI_API_KEY;
-    
+
     if (!openrouterKey && !geminiKey) {
       return NextResponse.json({
         reply: getFallbackResponse(message, appointmentContext),

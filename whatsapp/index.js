@@ -107,6 +107,35 @@ function getClient() {
             direction: 'inbound',
           },
         });
+
+        // Ask app AI to answer the client and send reply back
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'http://localhost:3000';
+        const replySecret = process.env.AI_WHATSAPP_REPLY_SECRET || '';
+        try {
+          const headers = { 'Content-Type': 'application/json' };
+          if (replySecret) headers['Authorization'] = `Bearer ${replySecret}`;
+          const res = await fetch(`${appUrl}/api/ai/whatsapp-reply`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ fromPhone, body }),
+          });
+          const data = await res.json().catch(() => ({}));
+          const reply = data?.reply;
+          if (reply && typeof reply === 'string' && reply.trim()) {
+            await client.sendMessage(msg.from, reply.trim());
+            await prisma.message.create({
+              data: {
+                fromPhone: toPhone,
+                toPhone: fromPhone,
+                body: reply.trim(),
+                sender: 'AppointLab',
+                direction: 'outbound',
+              },
+            });
+          }
+        } catch (replyErr) {
+          console.error('Error getting/sending AI reply:', replyErr);
+        }
       } catch (err) {
         console.error('Error saving inbound message:', err);
       }

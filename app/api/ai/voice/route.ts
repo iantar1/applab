@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const VOICE_ID = "JBFqnCBsd6RMkjVDRZzb";
+const VOICE_ID = "hzLyDn3IrvrdH83BdqUu";
 
 const REFUSAL_MESSAGE = "I am here only to help you use the hospital appointment app.";
 

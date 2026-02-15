@@ -1,7 +1,11 @@
 /**
  * Notification Service
- * Handles sending emails, SMS, and WhatsApp messages for bookings
+ * Handles sending emails, SMS, and WhatsApp messages for bookings.
+ * Uses AI to generate confirmation and reminder messages when available; falls back to fixed text.
  */
+
+import { generateNotificationMessage } from "@/lib/ai-notification-messages";
+import { getBlockedNumbers, isBlocked } from "@/lib/blocked-numbers";
 
 export interface NotificationPayload {
   bookingId: number;
@@ -45,85 +49,94 @@ export async function sendConfirmationEmail(payload: NotificationPayload) {
 }
 
 /**
- * Send confirmation notification via WhatsApp
+ * Send WhatsApp via bridge (shared helper). Skips if phone/ID is blocked.
  */
-export async function sendConfirmationWhatsApp(payload: NotificationPayload) {
+async function sendWhatsApp(phone: string, body: string) {
+  const blockedList = await getBlockedNumbers();
+  if (isBlocked(phone, blockedList)) {
+    return { skipped: true, reason: "blocked" };
+  }
+  const BRIDGE_URL = process.env.WHATSAPP_BRIDGE_URL || 'http://localhost:3001';
+  const response = await fetch(`${BRIDGE_URL}/send`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      to: phone,
+      body,
+      sender: 'AppointLab',
+    }),
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Failed to send WhatsApp message');
+  }
+  return response.json();
+}
+
+/**
+ * Send confirmation notification via WhatsApp (at time of booking).
+ * Uses AI to generate a friendly confirm/remind message when possible; otherwise fixed text.
+ */
+export async function sendConfirmationWhatsApp(payload: NotificationPayload & { dayDate?: string }) {
   try {
-    const message = `Hi ${payload.name}! 👋
-
-Your appointment has been confirmed! 
-
-📋 Service: ${payload.serviceName}
-📅 Date: ${payload.appointmentDate}
-🕐 Time: ${payload.appointmentTime}
-🆔 Booking ID: #${payload.bookingId}
-
-Please arrive 10 minutes early. You'll receive appointment reminders before your test.
-
-Thank you for choosing us!`;
-
-    // Use WhatsApp Bridge directly (running on port 3001)
-    const BRIDGE_URL = process.env.WHATSAPP_BRIDGE_URL || 'http://localhost:3001';
-    
-    const response = await fetch(`${BRIDGE_URL}/send`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        to: payload.phone,
-        body: message,
-        sender: 'AppointLab',
-      }),
+    const dayDate = payload.dayDate || payload.appointmentDate;
+    const aiMessage = await generateNotificationMessage("confirmation", {
+      name: payload.name,
+      serviceName: payload.serviceName,
+      appointmentDate: payload.appointmentDate,
+      appointmentTime: payload.appointmentTime,
+      dayDate,
     });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || 'Failed to send WhatsApp message');
-    }
-
-    return await response.json();
+    const message =
+      aiMessage ||
+      `Hi ${payload.name}, you just booked an appointment for ${payload.serviceName}. See you on ${dayDate} at ${payload.appointmentTime}`;
+    return sendWhatsApp(payload.phone, message);
   } catch (error) {
-    console.error('Error sending WhatsApp message:', error);
+    console.error("Error sending WhatsApp confirmation:", error);
     throw error;
   }
 }
 
 /**
- * Send appointment reminder via WhatsApp
+ * Send "one day before" reminder via WhatsApp.
+ * Uses AI when available; otherwise fixed text.
+ */
+export async function sendReminderOneDayBeforeWhatsApp(payload: NotificationPayload) {
+  try {
+    const aiMessage = await generateNotificationMessage("reminder_1day", {
+      name: payload.name,
+      serviceName: payload.serviceName,
+      appointmentDate: payload.appointmentDate,
+      appointmentTime: payload.appointmentTime,
+    });
+    const message =
+      aiMessage ||
+      `Hi ${payload.name}, we kindly remind you that you have an appointment tomorrow at ${payload.appointmentTime}. Don't forget!`;
+    return sendWhatsApp(payload.phone, message);
+  } catch (error) {
+    console.error("Error sending day-before reminder:", error);
+    throw error;
+  }
+}
+
+/**
+ * Send "1 hour before" reminder via WhatsApp.
+ * Uses AI when available; otherwise fixed text.
  */
 export async function sendReminderWhatsApp(payload: NotificationPayload) {
   try {
-    const message = `⏰ Reminder: Your appointment is coming up!
-
-📋 Service: ${payload.serviceName}
-📅 Date: ${payload.appointmentDate}
-🕐 Time: ${payload.appointmentTime}
-🆔 Booking ID: #${payload.bookingId}
-
-Please arrive 10 minutes early. Contact us if you need to reschedule.
-
-See you soon! 👋`;
-
-    // Use WhatsApp Bridge directly (running on port 3001)
-    const BRIDGE_URL = process.env.WHATSAPP_BRIDGE_URL || 'http://localhost:3001';
-    
-    const response = await fetch(`${BRIDGE_URL}/send`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        to: payload.phone,
-        body: message,
-        sender: 'AppointLab',
-      }),
+    const aiMessage = await generateNotificationMessage("reminder_1hour", {
+      name: payload.name,
+      serviceName: payload.serviceName,
+      appointmentDate: payload.appointmentDate,
+      appointmentTime: payload.appointmentTime,
     });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || 'Failed to send reminder');
-    }
-
-    return await response.json();
+    const message =
+      aiMessage ||
+      `Hi ${payload.name}, you have an appointment for ${payload.serviceName} at ${payload.appointmentTime}. See you soon!`;
+    return sendWhatsApp(payload.phone, message);
   } catch (error) {
-    console.error('Error sending reminder:', error);
+    console.error("Error sending reminder:", error);
     throw error;
   }
 }

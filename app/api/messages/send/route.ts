@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin-auth';
 import { prisma } from '@/lib/prisma';
+import { getBlockedNumbers, isBlocked } from '@/lib/blocked-numbers';
 
 const BRIDGE_URL = process.env.WHATSAPP_BRIDGE_URL || 'http://localhost:3001';
 
@@ -22,6 +23,14 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: 'toPhone and body are required' },
         { status: 400 }
+      );
+    }
+
+    const blockedList = await getBlockedNumbers();
+    if (isBlocked(toPhone, blockedList)) {
+      return NextResponse.json(
+        { error: 'This number or group ID is blocked and cannot receive messages.' },
+        { status: 403 }
       );
     }
 

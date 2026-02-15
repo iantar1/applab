@@ -74,7 +74,7 @@ export async function POST(request: Request) {
     }
     const currentUser = await prisma.user.findUnique({
       where: { id: payload.userId },
-      select: { id: true, isAdmin: true, email: true, phone: true },
+      select: { id: true, isAdmin: true, email: true, phone: true, fullName: true },
     });
     if (!currentUser) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
@@ -184,9 +184,15 @@ export async function POST(request: Request) {
       },
     });
 
-    // Send WhatsApp confirmation message
+    // Send WhatsApp confirmation message (first message: at time of booking)
     const contactPhone = phone || currentUser.phone;
-    const contactName = name || currentUser.email?.split('@')[0] || 'Guest';
+    const contactName = name || currentUser.fullName || currentUser.email?.split('@')[0] || 'Guest';
+    const dayDate = appointment.appointmentDate.toLocaleDateString('en-GB', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
 
     if (contactPhone) {
       try {
@@ -197,6 +203,7 @@ export async function POST(request: Request) {
           name: contactName,
           serviceName: service.name,
           appointmentDate: appointment.appointmentDate.toISOString().split('T')[0],
+          dayDate,
           appointmentTime: appointment.appointmentTime,
           type: 'confirmation',
         });

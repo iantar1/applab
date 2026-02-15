@@ -152,6 +152,8 @@ export default function HomePage() {
   const [sendError, setSendError] = useState<string | null>(null);
   const [appSettingsWhatsappPhone, setAppSettingsWhatsappPhone] = useState('');
   const [appSettingsSaving, setAppSettingsSaving] = useState(false);
+  const [blockedNumbers, setBlockedNumbers] = useState<string[]>([]);
+  const [newBlockedInput, setNewBlockedInput] = useState('');
   const router = useRouter();
 
   useEffect(() => {
@@ -397,6 +399,7 @@ export default function HomePage() {
         if (!cancelled && res.ok) {
           const data = await res.json();
           setAppSettingsWhatsappPhone(data.whatsappPhone ?? '');
+          setBlockedNumbers(Array.isArray(data.blockedNumbers) ? data.blockedNumbers : []);
         }
       } catch (error) {
         console.error('Error fetching app settings:', error);
@@ -555,18 +558,34 @@ export default function HomePage() {
       const res = await fetch('/api/app-settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ whatsappPhone: appSettingsWhatsappPhone.trim() }),
+        body: JSON.stringify({
+          whatsappPhone: appSettingsWhatsappPhone.trim(),
+          blockedNumbers,
+        }),
       });
       if (!res.ok) {
         const data = await res.json();
         console.error(data.error ?? 'Failed to save app settings');
         return;
       }
+      const data = await res.json();
+      if (Array.isArray(data.blockedNumbers)) setBlockedNumbers(data.blockedNumbers);
     } catch (error) {
       console.error('Error saving app settings:', error);
     } finally {
       setAppSettingsSaving(false);
     }
+  };
+
+  const handleAddBlockedNumber = () => {
+    const v = newBlockedInput.trim();
+    if (!v || blockedNumbers.includes(v)) return;
+    setBlockedNumbers((prev) => [...prev, v]);
+    setNewBlockedInput('');
+  };
+
+  const handleRemoveBlockedNumber = (entry: string) => {
+    setBlockedNumbers((prev) => prev.filter((x) => x !== entry));
   };
 
   if (loading) {
@@ -962,6 +981,41 @@ export default function HomePage() {
                       onChange={(e) => setAppSettingsWhatsappPhone(e.target.value)}
                       placeholder="e.g. +212612345678"
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-base font-medium">Blocked numbers</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Numbers or group IDs the AI will not reply to and will not receive WhatsApp messages (e.g. 212708010325 or 120363421754134116@g.us).
+                    </p>
+                    <div className="flex gap-2">
+                      <Input
+                        value={newBlockedInput}
+                        onChange={(e) => setNewBlockedInput(e.target.value)}
+                        placeholder="Number or group ID"
+                        onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddBlockedNumber())}
+                      />
+                      <Button type="button" variant="outline" onClick={handleAddBlockedNumber}>
+                        Add
+                      </Button>
+                    </div>
+                    {blockedNumbers.length > 0 && (
+                      <ul className="mt-2 space-y-1 rounded-md border p-2 bg-muted/30">
+                        {blockedNumbers.map((entry) => (
+                          <li key={entry} className="flex items-center justify-between gap-2 text-sm">
+                            <span className="font-mono truncate">{entry}</span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="shrink-0 h-8 w-8 p-0 text-destructive hover:text-destructive"
+                              onClick={() => handleRemoveBlockedNumber(entry)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                   <Button onClick={handleSaveAppSettings} disabled={appSettingsSaving}>
                     {appSettingsSaving ? 'Saving...' : 'Save'}

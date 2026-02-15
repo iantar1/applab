@@ -1,132 +1,163 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { sendReminderWhatsApp, sendReminderEmail } from "@/lib/notification-service";
+import {
+  sendReminderWhatsApp,
+  sendReminderOneDayBeforeWhatsApp,
+  sendReminderEmail,
+} from "@/lib/notification-service";
 
 /**
- * GET: Check for appointments happening in the next 30 minutes and send reminders
+ * GET: Check for appointments and send:
+ * - "1 day before" reminder (appointment is tomorrow)
+ * - "1 hour before" reminder (appointment is in ~1 hour)
  * Call this endpoint every 5 minutes from a cron job or external scheduler
- * 
- * Example: curl -X GET "http://localhost:3000/api/scheduler/appointment-reminders"
  */
 export async function GET(request: NextRequest) {
   try {
-    // Verify this is called from a trusted source (optional - can add API key check)
     const authHeader = request.headers.get("authorization");
     const schedulerSecret = process.env.SCHEDULER_SECRET;
-    
     if (schedulerSecret && authHeader !== `Bearer ${schedulerSecret}`) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Get current time
     const now = new Date();
-    const in30Minutes = new Date(now.getTime() + 30 * 60 * 1000); // 30 minutes from now
-    const in25Minutes = new Date(now.getTime() + 25 * 60 * 1000); // 25 minutes from now (buffer)
+    const today = now.toISOString().split("T")[0];
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split("T")[0];
+    const in1Hour = new Date(now.getTime() + 60 * 60 * 1000);
+    const in55Min = new Date(now.getTime() + 55 * 60 * 1000);
 
-    // Find appointments that are:
-    // 1. Between now and 30 minutes from now
-    // 2. Have status "confirmed"
-    // 3. Haven't been reminded yet (no reminder sent)
     const upcomingAppointments = await prisma.appointment.findMany({
       where: {
-        status: "confirmed",
-        appointmentDate: {
-          gte: now.toISOString().split("T")[0], // Today or later
-        },
+        status: { in: ["pending", "confirmed", "paid"] },
+        appointmentDate: { gte: today },
       },
-      include: {
-        service: true,
-        user: true,
-      },
+      include: { service: true, user: true },
     });
 
-    const remindersToSend = [];
+    const results: Array<{
+      success: boolean;
+      type: string;
+      appointmentId: string;
+      reminderKind?: "1day" | "1hour";
+      phone?: string;
+      email?: string;
+      result?: unknown;
+      error?: string;
+    }> = [];
 
     for (const appointment of upcomingAppointments) {
-      // Combine date and time to get exact appointment time
+      const appointmentDate =
+        typeof appointment.appointmentDate === "string"
+          ? appointment.appointmentDate
+          : appointment.appointmentDate.toISOString().split("T")[0];
       const appointmentDateTime = new Date(
-        `${appointment.appointmentDate}T${appointment.appointmentTime}:00`
+        `${appointmentDate}T${appointment.appointmentTime}:00`
       );
+      const phone = appointment.guestPhone || appointment.user?.phone;
+      const email = appointment.guestEmail || appointment.user?.email;
+      const name =
+        appointment.guestName ||
+        appointment.user?.fullName ||
+        "Customer";
+      const serviceName =
+        appointment.service?.name || "Your Service";
 
-      // Check if appointment is within the 30-minute reminder window
-      if (appointmentDateTime >= now && appointmentDateTime <= in30Minutes) {
-        // Check if we've already sent a reminder (optional - store in DB if needed)
-        // For now, we'll send it if it's in the window
-        
-        const phone = appointment.guestPhone || appointment.user?.phone;
-        const email = appointment.guestEmail || appointment.user?.email;
-        const name = appointment.guestName || appointment.user?.fullName || "Customer";
+      const payload = {
+        bookingId: parseInt(String(appointment.id), 10),
+        email: email || "",
+        phone: phone || "",
+        name,
+        serviceName,
+        appointmentDate,
+        appointmentTime: appointment.appointmentTime,
+        type: "reminder" as const,
+      };
 
-        if (phone) {
-          remindersToSend.push({
-            type: "whatsapp",
-            appointment,
-            phone,
-            email,
-            name,
+      // 1) One day before: appointment is tomorrow (send once)
+      if (
+        appointmentDate === tomorrowStr &&
+        !appointment.reminder1DaySentAt &&
+        phone
+      ) {
+        try {
+          await sendReminderOneDayBeforeWhatsApp(payload);
+          await prisma.appointment.update({
+            where: { id: appointment.id },
+            data: { reminder1DaySentAt: now },
           });
-        }
-        
-        if (email) {
-          remindersToSend.push({
-            type: "email",
-            appointment,
+          results.push({
+            success: true,
+            type: "whatsapp",
+            reminderKind: "1day",
+            appointmentId: appointment.id,
             phone,
-            email,
-            name,
+          });
+        } catch (error) {
+          results.push({
+            success: false,
+            type: "whatsapp",
+            reminderKind: "1day",
+            appointmentId: appointment.id,
+            error: error instanceof Error ? error.message : "Unknown error",
           });
         }
       }
-    }
 
-    // Send all reminders
-    const results = [];
-    for (const reminder of remindersToSend) {
-      try {
-        const appointmentDateStr = typeof reminder.appointment.appointmentDate === 'string' 
-          ? reminder.appointment.appointmentDate 
-          : reminder.appointment.appointmentDate.toISOString().split('T')[0];
-
-        const payload = {
-          bookingId: parseInt(String(reminder.appointment.id), 10),
-          email: reminder.email || "",
-          phone: reminder.phone || "",
-          name: reminder.name,
-          serviceName: reminder.appointment.service?.name || "Your Service",
-          appointmentDate: appointmentDateStr,
-          appointmentTime: reminder.appointment.appointmentTime,
-          type: "reminder" as const,
-        };
-
-        if (reminder.type === "whatsapp" && reminder.phone) {
-          const result = await sendReminderWhatsApp(payload);
+      // 2) One hour before: appointment is in ~55–60 minutes (send once)
+      if (
+        appointmentDateTime >= in55Min &&
+        appointmentDateTime <= in1Hour &&
+        !appointment.reminder1HourSentAt &&
+        phone
+      ) {
+        try {
+          await sendReminderWhatsApp(payload);
+          await prisma.appointment.update({
+            where: { id: appointment.id },
+            data: { reminder1HourSentAt: now },
+          });
           results.push({
             success: true,
             type: "whatsapp",
-            appointmentId: reminder.appointment.id,
-            phone: reminder.phone,
-            result,
+            reminderKind: "1hour",
+            appointmentId: appointment.id,
+            phone,
           });
-        } else if (reminder.type === "email" && reminder.email) {
-          const result = await sendReminderEmail(payload);
+        } catch (error) {
+          results.push({
+            success: false,
+            type: "whatsapp",
+            reminderKind: "1hour",
+            appointmentId: appointment.id,
+            error: error instanceof Error ? error.message : "Unknown error",
+          });
+        }
+      }
+
+      // Optional: email reminders for 1-hour window
+      if (
+        appointmentDateTime >= in55Min &&
+        appointmentDateTime <= in1Hour &&
+        email
+      ) {
+        try {
+          await sendReminderEmail(payload);
           results.push({
             success: true,
             type: "email",
-            appointmentId: reminder.appointment.id,
-            email: reminder.email,
-            result,
+            appointmentId: appointment.id,
+            email,
+          });
+        } catch (error) {
+          results.push({
+            success: false,
+            type: "email",
+            appointmentId: appointment.id,
+            error: error instanceof Error ? error.message : "Unknown error",
           });
         }
-      } catch (error) {
-        results.push({
-          success: false,
-          type: reminder.type,
-          appointmentId: reminder.appointment.id,
-          error: error instanceof Error ? error.message : "Unknown error",
-        });
       }
     }
 

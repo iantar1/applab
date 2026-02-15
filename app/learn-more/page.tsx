@@ -25,7 +25,7 @@ export default function LearnMorePage() {
           <div>
             <h2 className="text-xl font-semibold mb-3">What is this website?</h2>
             <p className="text-muted-foreground leading-relaxed">
-              This is a medical appointment booking platform. Its role is to connect you with a wide range of specialized healthcare services in one place. Instead of calling multiple clinics or waiting in long queues, you can browse available services, choose a time that works for you, and book your appointment online—all from your phone or computer.
+            This is a medical appointment booking platform. Its role is to facilitate appointment bookings and save you time. You can browse available services, choose a time that works for you, and book your appointment online — all from your phone or computer.
             </p>
           </div>
 

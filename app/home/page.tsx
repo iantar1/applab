@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { History, Shield, Calendar, Settings, LogOut, User, Clock, CalendarDays, Pencil, Plus, Trash2, MessageCircle, Menu, X } from 'lucide-react';
+import { History, Shield, Calendar, Settings, LogOut, User, Clock, CalendarDays, Pencil, Plus, Trash2, MessageCircle, Menu, X, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -154,6 +154,10 @@ export default function HomePage() {
   const [appSettingsSaving, setAppSettingsSaving] = useState(false);
   const [blockedNumbers, setBlockedNumbers] = useState<string[]>([]);
   const [newBlockedInput, setNewBlockedInput] = useState('');
+  // Admin: appointment actions (cancel, complete, reschedule)
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [rescheduleAppointment, setRescheduleAppointment] = useState<{ id: string; date: string; time: string } | null>(null);
+  const [rescheduleSaving, setRescheduleSaving] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -306,6 +310,88 @@ export default function HomePage() {
       setServiceError('Something went wrong');
     } finally {
       setDeletingService(false);
+    }
+  }
+
+  async function refetchAppointments() {
+    try {
+      const res = await fetch('/api/appointments');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.appointments) setAppointments(data.appointments);
+      }
+    } catch (e) {
+      console.error('Error refetching appointments:', e);
+    }
+  }
+
+  async function handleAppointmentCancel(aptId: string) {
+    setActionLoadingId(aptId);
+    try {
+      const res = await fetch(`/api/appointments/${aptId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel' }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error ?? 'Failed to cancel appointment');
+        return;
+      }
+      await refetchAppointments();
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
+  async function handleAppointmentComplete(aptId: string) {
+    setActionLoadingId(aptId);
+    try {
+      const res = await fetch(`/api/appointments/${aptId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'complete' }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error ?? 'Failed to mark as done');
+        return;
+      }
+      await refetchAppointments();
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
+  function openRescheduleDialog(apt: AppointmentItem) {
+    const d = new Date(apt.appointmentDate);
+    const dateStr = d.toISOString().slice(0, 10);
+    const timeStr = apt.appointmentTime ?? '09:00';
+    setRescheduleAppointment({ id: apt.id, date: dateStr, time: timeStr });
+  }
+
+  async function handleRescheduleSubmit() {
+    if (!rescheduleAppointment) return;
+    setRescheduleSaving(true);
+    try {
+      const res = await fetch(`/api/appointments/${rescheduleAppointment.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'reschedule',
+          appointmentDate: rescheduleAppointment.date,
+          appointmentTime: rescheduleAppointment.time,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error ?? 'Failed to reschedule');
+        return;
+      }
+      setRescheduleAppointment(null);
+      await refetchAppointments();
+    } finally {
+      setRescheduleSaving(false);
     }
   }
 
@@ -702,6 +788,7 @@ export default function HomePage() {
                 </Button>
               </div>
             ) : (
+              <>
               <div className="space-y-4">
                 {appointments.map((apt) => {
                   const date = new Date(apt.appointmentDate);
@@ -718,7 +805,17 @@ export default function HomePage() {
                             <CardTitle className="text-lg">{apt.service.name}</CardTitle>
                             <CardDescription>{apt.service.category}</CardDescription>
                           </div>
-                          <Badge variant={apt.status === 'completed' ? 'default' : apt.status === 'paid' ? 'secondary' : 'outline'}>
+                          <Badge
+                            variant={
+                              apt.status === 'cancelled'
+                                ? 'destructive'
+                                : apt.status === 'completed'
+                                  ? 'default'
+                                  : apt.status === 'paid'
+                                    ? 'secondary'
+                                    : 'outline'
+                            }
+                          >
                             {apt.status}
                           </Badge>
                         </div>
@@ -747,10 +844,86 @@ export default function HomePage() {
                           </p>
                         )}
                       </CardContent>
+                      {user?.isAdmin && apt.status !== 'cancelled' && (
+                        <CardFooter className="flex flex-wrap gap-2 border-t bg-muted/30">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleAppointmentCancel(apt.id)}
+                            disabled={actionLoadingId === apt.id}
+                          >
+                            <Trash2 className="h-4 w-4 mr-1" />
+                            Cancel
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openRescheduleDialog(apt)}
+                            disabled={!!actionLoadingId}
+                          >
+                            <Pencil className="h-4 w-4 mr-1" />
+                            Modify date
+                          </Button>
+                          {apt.status !== 'completed' && (
+                            <Button
+                              variant="default"
+                              size="sm"
+                              onClick={() => handleAppointmentComplete(apt.id)}
+                              disabled={actionLoadingId === apt.id}
+                            >
+                              <CheckCircle className="h-4 w-4 mr-1" />
+                              Mark as done
+                            </Button>
+                          )}
+                        </CardFooter>
+                      )}
                     </Card>
                   );
                 })}
               </div>
+            <Dialog open={!!rescheduleAppointment} onOpenChange={(open) => !open && setRescheduleAppointment(null)}>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Modify appointment date & time</DialogTitle>
+                  <DialogDescription>Choose the new date and time for this appointment.</DialogDescription>
+                </DialogHeader>
+                {rescheduleAppointment && (
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="reschedule-date">Date</Label>
+                      <Input
+                        id="reschedule-date"
+                        type="date"
+                        value={rescheduleAppointment.date}
+                        onChange={(e) =>
+                          setRescheduleAppointment((prev) => prev ? { ...prev, date: e.target.value } : null)
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="reschedule-time">Time</Label>
+                      <Input
+                        id="reschedule-time"
+                        type="time"
+                        value={rescheduleAppointment.time}
+                        onChange={(e) =>
+                          setRescheduleAppointment((prev) => prev ? { ...prev, time: e.target.value } : null)
+                        }
+                      />
+                    </div>
+                  </div>
+                )}
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setRescheduleAppointment(null)} disabled={rescheduleSaving}>
+                    Close
+                  </Button>
+                  <Button onClick={handleRescheduleSubmit} disabled={rescheduleSaving || !rescheduleAppointment}>
+                    {rescheduleSaving ? 'Saving...' : 'Save'}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </>
             )}
           </div>
         );

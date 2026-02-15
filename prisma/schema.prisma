@@ -42,7 +42,7 @@ model Appointment {
   serviceId         String
   appointmentDate   DateTime
   appointmentTime   String   // e.g. "09:00"
-  status            String   @default("pending") // pending, paid, completed
+  status            String   @default("pending") // pending, paid, completed, cancelled
   totalPrice        Float
   insuranceId       String?  // optional
   stripeSessionId   String?

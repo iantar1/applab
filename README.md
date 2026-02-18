@@ -2,6 +2,13 @@
 
 A healthcare booking web app built during a 2-day hackathon. This project provides appointment booking, payments, and WhatsApp-based notifications and messaging for admins and clients.
 
+Watch a short demo of the app below:
+
+<video controls width="640">
+   <source src="/Add%20a%20subheading.mp4" type="video/mp4">
+   Your browser does not support the video tag. You can download it <a href="/Add%20a%20subheading.mp4">here</a>.
+</video>
+
 ## Quick hackathon note
 
 This repository was created and iterated on during a 2-day hackathon. The goal was to build a minimally viable booking flow with payment and WhatsApp integrations that can be extended after the event.

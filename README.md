@@ -5,7 +5,7 @@ A healthcare booking web app built during a 2-day hackathon. This project provid
 Watch a short demo of the app below:
 
 <video controls width="640">
-   <source src="/Add%20a%20subheading.mp4" type="video/mp4">
+   <source src="./public/Add%20a%20subheading.mp4" type="video/mp4">
    Your browser does not support the video tag. You can download it <a href="/Add%20a%20subheading.mp4">here</a>.
 </video>
 
